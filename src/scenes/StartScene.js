@@ -20,7 +20,7 @@ export default class StartScene extends Phaser.Scene {
 
         this.startText.on('pointerdown', () => {
             SaveState.clear(); // Clear any existing save state
-            this.scene.start('TownScene');
+            this.scene.start('WorldScene');
         });
 
         this.continueText.on('pointerdown', () => {
@@ -28,7 +28,7 @@ export default class StartScene extends Phaser.Scene {
             if (gameState) {
                 this.scene.start(gameState.scene, gameState.data);
             } else {
-                this.scene.start('TownScene');
+                this.scene.start('WorldScene');
             }
         });
 

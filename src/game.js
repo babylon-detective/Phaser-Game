@@ -1,9 +1,12 @@
 import Phaser from "phaser";
+
 import StartScene from "./scenes/StartScene";
-import TownScene from "./scenes/TownScene";
+import WorldScene from "./scenes/WorldScene";
 import BattleScene from "./scenes/BattleScene";
 import ShooterScene from "./scenes/ShooterScene";
-import PlayerScene from "./scenes/PlayerScene";
+
+import PlayerManager from "./managers/PlayerManager";
+import NpcManager from "./managers/NpcManager";
 
 const config = {
     type: Phaser.AUTO,
@@ -13,10 +16,11 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
+            // gravity: { y: 0 },
             debug: false
         }
     },
-    scene: [StartScene, TownScene, BattleScene, ShooterScene, PlayerScene]
+    scene: [StartScene, WorldScene, BattleScene, ShooterScene]
 };
 
 const game = new Phaser.Game(config);
