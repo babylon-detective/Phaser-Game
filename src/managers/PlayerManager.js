@@ -1,5 +1,78 @@
 import Phaser from "phaser";
 
+// Base class for shared functionality
+class BaseControls {
+    constructor(player, scene) {
+        this.player = player;
+        this.scene = scene;
+    }
+
+    // Shared methods
+    resetVelocity() {
+        this.player.body.setVelocity(0);
+    }
+
+    // Add more shared methods as needed
+}
+
+// World controls
+class WorldControls extends BaseControls {
+    constructor(player, scene) {
+        super(player, scene);
+        this.wasdKeys = scene.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+    }
+
+    update() {
+        this.resetVelocity();
+        const speed = 160;
+
+        if (this.wasdKeys.left.isDown) {
+            this.player.body.setVelocityX(-speed);
+        } else if (this.wasdKeys.right.isDown) {
+            this.player.body.setVelocityX(speed);
+        }
+
+        if (this.wasdKeys.up.isDown) {
+            this.player.body.setVelocityY(-speed);
+        } else if (this.wasdKeys.down.isDown) {
+            this.player.body.setVelocityY(speed);
+        }
+    }
+}
+
+// Battle controls
+class BattleControls extends BaseControls {
+    constructor(player, scene) {
+        super(player, scene);
+        this.wasdKeys = scene.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+    }
+
+    update() {
+        this.resetVelocity();
+        const speed = 160;
+
+        if (this.wasdKeys.left.isDown) {
+            this.player.body.setVelocityX(-speed);
+        } else if (this.wasdKeys.right.isDown) {
+            this.player.body.setVelocityX(speed);
+        }
+
+        if (this.wasdKeys.up.isDown) {
+            this.player.body.setVelocityY(-speed);
+        }
+    }
+}
+
 export default class PlayerManager {
     constructor(scene) {
         // We'll store a reference to the existing scene
@@ -8,7 +81,7 @@ export default class PlayerManager {
         // We'll keep references to the player & camera box
         this.player = null;
         this.cameraBox = null;
-        this.cursors = null;
+        this.controls = null;
     }
 
     create() {
@@ -49,39 +122,29 @@ export default class PlayerManager {
         // Let other code know the player has been created
         this.scene.events.emit('playerCreated', this.player);
 
-        // Setup keyboard input for movement (WASD & arrow keys)
-        this.cursors = this.scene.input.keyboard.addKeys({
-            up: Phaser.Input.Keyboard.KeyCodes.W,
-            down: Phaser.Input.Keyboard.KeyCodes.S,
-            left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D,
-            arrowUp: Phaser.Input.Keyboard.KeyCodes.UP,
-            arrowDown: Phaser.Input.Keyboard.KeyCodes.DOWN,
-            arrowLeft: Phaser.Input.Keyboard.KeyCodes.LEFT,
-            arrowRight: Phaser.Input.Keyboard.KeyCodes.RIGHT
-        });
+        // Initialize controls based on scene
+        if (this.scene.scene.key === 'WorldScene') {
+            this.controls = new WorldControls(this.player, this.scene);
+        } else if (this.scene.scene.key === 'BattleScene') {
+            this.controls = new BattleControls(this.player, this.scene);
+        }
+    }
+
+    getPlayerData() {
+        if (!this.player) return null;
+        
+        return {
+            x: this.player.x,
+            y: this.player.y,
+            // Add any other player properties you want to pass to battle
+            health: 100, // example property
+            level: 1,    // example property
+        };
     }
 
     update() {
-        if (!this.player || !this.player.body) return;
-
-        // Reset velocity each frame
-        this.player.body.setVelocity(0);
-
-        const speed = 160;
-
-        // Horizontal movement
-        if (this.cursors.left.isDown || this.cursors.arrowLeft.isDown) {
-            this.player.body.setVelocityX(-speed);
-        } else if (this.cursors.right.isDown || this.cursors.arrowRight.isDown) {
-            this.player.body.setVelocityX(speed);
-        }
-
-        // Vertical movement
-        if (this.cursors.up.isDown || this.cursors.arrowUp.isDown) {
-            this.player.body.setVelocityY(-speed);
-        } else if (this.cursors.down.isDown || this.cursors.arrowDown.isDown) {
-            this.player.body.setVelocityY(speed);
+        if (this.controls) {
+            this.controls.update();
         }
 
         // Keep camera box centered on the player

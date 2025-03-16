@@ -1,13 +1,18 @@
 import Phaser from "phaser";
 
 import SaveState from "../SaveState";
-``
 import PlayerManager from "../managers/PlayerManager";
 import NpcManager from "../managers/NpcManager";
 
 export default class WorldScene extends Phaser.Scene {
     constructor() {
         super({ key: 'WorldScene' });
+    }
+
+    init(data) {
+        console.log('WorldScene init with data:', data);
+        // Store return position if coming back from battle
+        this.returnPosition = data?.returnPosition || null;
     }
 
     preload() {
@@ -21,7 +26,7 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     create() {
-       
+        console.log('WorldScene create');
         // Tilemap setup
         const map = this.make.tilemap({ key: 'map' });
         const tilesetGrass = map.addTilesetImage('TX Tileset Grass', 'tilesGrass', 32, 32, 0, 0);
@@ -42,13 +47,20 @@ export default class WorldScene extends Phaser.Scene {
         const scale = Math.min(scaleX, scaleY);
 
         this.cameras.main.setZoom(scale);
-        this.cameras.main.scrollX = 0;
-        this.cameras.main.scrollY = 0;
-        this.cameras.main.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
 
         // ---- PLAYER MANAGER ----
         this.playerManager = new PlayerManager(this);
         this.playerManager.create(); // sets up the player
+
+        // Position player and camera
+        if (this.returnPosition && this.playerManager.player) {
+            console.log('Setting player position to returnPosition:', this.returnPosition);
+            this.playerManager.player.setPosition(this.returnPosition.x, this.returnPosition.y);
+            this.cameras.main.centerOn(this.returnPosition.x, this.returnPosition.y);
+        } else {
+            console.log('Centering camera on map center');
+            this.cameras.main.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
+        }
 
         // ---- NPC MANAGER ----
         this.npcManager = new NpcManager(this);
@@ -56,9 +68,9 @@ export default class WorldScene extends Phaser.Scene {
         // Example NPC spawns
         this.npcManager.spawnNPC(map.tileToWorldX(10), map.tileToWorldY(8));
         this.npcManager.spawnNPC(500, 350);
-        this.npcManager.spawnNPC(1200, 350); // for a third one
+        this.npcManager.spawnNPC(1200, 350);
         this.npcManager.spawnNPC(0,0); 
-        this.npcManager.spawnNPC(1000,1000); 
+        this.npcManager.spawnNPC(1000,1000);
 
         // Save button
         const saveLocation = this.add.text(100, 200, 'Save Location', { fontSize: '24px', fill: '#fff' }).setInteractive();
@@ -76,5 +88,10 @@ export default class WorldScene extends Phaser.Scene {
 
         // NPC update
         this.npcManager?.update();
+
+        // Check for NPC interactions
+        if (this.playerManager && this.playerManager.player) {
+            this.npcManager.checkInteraction(this.playerManager.player);
+        }
     }
 }
