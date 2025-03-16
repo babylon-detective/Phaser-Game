@@ -88,7 +88,7 @@ export default class BattleScene extends Phaser.Scene {
         this.add.text(
             this.cameras.main.width / 2,
             16,
-            'WASD to move, W to jump, DELETE to escape',
+            'WASD to move, W to jump, ESC to escape',
             { fontSize: '16px', fill: '#fff' }
         ).setOrigin(0.5, 0);
 
@@ -117,52 +117,29 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     returnToWorld() {
-        console.log('Attempting to return to WorldScene');
-        // Prevent multiple calls
-        if (this.isReturning) {
-            console.log('Already returning, aborting.');
-            return;
-        }
+        if (this.isReturning) return;
         this.isReturning = true;
-
-        console.log('Resetting NPC battle state');
-        // Reset the battle state of the NPC first
+        console.log('Starting return to world process');
+    
+        // Reset the battle state and trigger cooldown
         if (this.npcData) {
             const worldScene = this.scene.get('WorldScene');
             if (worldScene && worldScene.npcManager) {
-                worldScene.npcManager.npcs.forEach(npc => {
-                    if (npc.x === this.npcData.x && npc.y === this.npcData.y) {
-                        npc.isInBattle = false;
-                    }
-                });
+                console.log('Handling battle end in NPC manager');
+                worldScene.npcManager.handleBattleEnd();
             }
         }
+    
+        // Clean up the battle scene
+        this.cleanup();
+    
+        // Stop this scene first
+        this.scene.stop();
 
-        console.log('Stopping input and physics');
-        // Stop input and physics in BattleScene
-        this.input.keyboard.enabled = false;
-        this.input.mouse.enabled = false;
-        this.physics.pause();
-
-        console.log('Waking up WorldScene');
-        // Wake up WorldScene with the return position
-        this.scene.wake('WorldScene', { 
+        // Then resume WorldScene with return data
+        this.scene.resume('WorldScene', { 
             returnPosition: this.worldPosition,
-            resumeFromBattle: true  // Flag to indicate we're returning from battle
-        });
-
-        console.log('Making WorldScene active and visible');
-        // Make WorldScene active and visible
-        this.scene.setActive(true, 'WorldScene');
-        this.scene.setVisible(true, 'WorldScene');
-        this.scene.bringToTop('WorldScene');
-
-        console.log('Scheduling cleanup and stop');
-        // Delay cleanup and stop to ensure WorldScene is active
-        this.time.delayedCall(100, () => {
-            console.log('Cleaning up and stopping BattleScene');
-            this.cleanup();
-            this.scene.stop();
+            resumeFromBattle: true
         });
     }
 
@@ -192,7 +169,7 @@ export default class BattleScene extends Phaser.Scene {
 
     cleanup() {
         // Disable input first
-        if (this.input) {
+        if (this.input && !this.isReturning) {
             this.input.keyboard.enabled = false;
             this.input.mouse.enabled = false;
         }
@@ -200,21 +177,8 @@ export default class BattleScene extends Phaser.Scene {
         // Stop physics
         if (this.physics && this.physics.world) {
             this.physics.world.pause();
-            this.physics.world.colliders.destroy();
         }
 
-        // Destroy all game objects
-        if (this.children) {
-            this.children.list.slice().forEach(child => {
-                if (child && child.destroy) {
-                    child.destroy();
-                }
-            });
-        }
-        
-        // Clear all events
-        this.events.removeAllListeners();
-        
         // Reset all references
         this.player = null;
         this.enemy = null;
@@ -222,5 +186,28 @@ export default class BattleScene extends Phaser.Scene {
         this.escapeKey = null;
         this.wasdKeys = null;
         this.isReturning = false;
+    }
+
+    shutdown() {
+        // Clear any remaining input listeners
+        if (this.escapeKey) {
+            this.escapeKey.removeAllListeners();
+        }
+        if (this.wasdKeys) {
+            Object.values(this.wasdKeys).forEach(key => {
+                if (key) key.removeAllListeners();
+            });
+        }
+        
+        // Reset all scene variables
+        this.player = null;
+        this.enemy = null;
+        this.ground = null;
+        this.escapeKey = null;
+        this.wasdKeys = null;
+        this.isReturning = false;
+        
+        // Call parent shutdown
+        super.shutdown();
     }
 }

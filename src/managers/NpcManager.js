@@ -5,6 +5,9 @@ export default class NpcManager {
         this.scene = scene;
         this.npcs = [];
         this.interactionRadius = 100; // Radius for NPC interaction
+        this.battleCooldown = false; // Add cooldown flag
+        this.cooldownDuration = 4000; // 4 seconds cooldown
+        this.isReturningFromBattle = false;
     }
 
     spawnNPC(worldX, worldY) {
@@ -39,8 +42,17 @@ export default class NpcManager {
     }
 
     checkInteraction(player) {
+        // Skip interaction check if on cooldown or returning from battle
+        if (this.battleCooldown || this.isReturningFromBattle) {
+            console.log('Interaction blocked: cooldown or returning from battle');
+            return;
+        }
+
         this.npcs.forEach(npc => {
-            if (npc.isInBattle) return; // Skip if already in battle
+            if (npc.isInBattle) {
+                console.log('NPC already in battle, skipping');
+                return;
+            }
 
             const distance = Phaser.Math.Distance.Between(
                 player.x, player.y,
@@ -48,18 +60,26 @@ export default class NpcManager {
             );
 
             if (distance <= this.interactionRadius) {
+                console.log('Starting battle with NPC');
                 this.startBattle(npc);
             }
         });
     }
 
     startBattle(npc) {
+        if (npc.isInBattle || this.battleCooldown || this.isReturningFromBattle) {
+            console.log('Cannot start battle: NPC in battle, cooldown active, or returning from battle');
+            return;
+        }
+        
+        console.log('Setting battle cooldown and NPC state');
         npc.isInBattle = true;
+        this.battleCooldown = true;
         
-        // Store current scene state
-        const currentSceneKey = this.scene.scene.key;
+        // First pause the current WorldScene
+        this.scene.scene.pause();
         
-        // Launch BattleScene
+        // Then launch BattleScene
         this.scene.scene.launch('BattleScene', { 
             playerData: this.scene.playerManager.getPlayerData(),
             npcData: { 
@@ -70,14 +90,27 @@ export default class NpcManager {
                 type: 'enemy'
             }
         });
-
-        // Sleep current scene
-        this.scene.scene.sleep(currentSceneKey);
         
-        // Ensure BattleScene is on top and active
+        // Make BattleScene active and visible
         this.scene.scene.bringToTop('BattleScene');
-        this.scene.scene.setVisible(true, 'BattleScene');
-        this.scene.scene.setActive(true, 'BattleScene');
+    }
+
+    handleBattleEnd() {
+        console.log('Handling battle end');
+        this.isReturningFromBattle = true;
+        this.battleCooldown = true;
+
+        // Reset NPC battle states
+        this.npcs.forEach(npc => {
+            npc.isInBattle = false;
+        });
+
+        // Set a delayed call to reset the returning state and cooldown
+        this.scene.time.delayedCall(this.cooldownDuration, () => {
+            console.log('Battle cooldown and return state expired');
+            this.isReturningFromBattle = false;
+            this.battleCooldown = false;
+        });
     }
 
     update() {

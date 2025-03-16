@@ -13,6 +13,7 @@ export default class WorldScene extends Phaser.Scene {
         console.log('WorldScene init with data:', data);
         // Store return position if coming back from battle
         this.returnPosition = data?.returnPosition || null;
+        this.resumeFromBattle = data?.resumeFromBattle || false;
     }
 
     preload() {
@@ -93,5 +94,47 @@ export default class WorldScene extends Phaser.Scene {
         if (this.playerManager && this.playerManager.player) {
             this.npcManager.checkInteraction(this.playerManager.player);
         }
+    }
+
+    wake(sys, data) {
+        console.log('WorldScene wake with data:', data);
+        if (data?.returnPosition && this.playerManager?.player) {
+            this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
+            this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+        }
+    }
+
+    resume(sys, data) {
+        console.log('WorldScene resume with data:', data);
+        if (data?.returnPosition && this.playerManager?.player) {
+            this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
+            this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+        }
+    }
+
+    pause() {
+        console.log('WorldScene paused');
+        // Optional: Pause any ongoing animations or timers
+    }
+
+    sleep() {
+        console.log('WorldScene sleep');
+        // Optional: Clean up any resources that shouldn't persist while sleeping
+    }
+
+    shutdown() {
+        console.log('WorldScene shutdown');
+        // Clean up any resources that shouldn't persist after shutdown
+        if (this.playerManager) {
+            // Clean up player manager resources
+            this.playerManager = null;
+        }
+        if (this.npcManager) {
+            // Clean up NPC manager resources
+            this.npcManager = null;
+        }
+        
+        // Call parent shutdown
+        super.shutdown();
     }
 }
