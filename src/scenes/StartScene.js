@@ -4,6 +4,8 @@ import SaveState from "../SaveState";
 export default class StartScene extends Phaser.Scene {
     constructor() {
         super({ key: 'StartScene' });
+        this.selectedIndex = 0;
+        this.menuItems = [];
     }
 
     preload() {
@@ -15,27 +17,78 @@ export default class StartScene extends Phaser.Scene {
 
         // Initialize text objects before calling resizeGame
         this.titleText = this.add.text(this.scale.width / 2, this.scale.height / 4, 'NAGEEX', { fontSize: '262px', fill: '#fff' }).setOrigin(0.5, 0.5);
-        this.startText = this.add.text(this.scale.width / 2, this.scale.height / 2, 'Start', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5).setInteractive();
-        this.continueText = this.add.text(this.scale.width / 2, this.scale.height / 2 + 50, 'Continue', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5).setInteractive();
+        
+        // Create menu items with bullet points
+        const menuY = this.scale.height / 2;
+        this.menuItems = [
+            this.add.text(this.scale.width / 2, menuY, '• Start', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5),
+            this.add.text(this.scale.width / 2, menuY + 50, '• Continue', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5)
+        ];
 
-        this.startText.on('pointerdown', () => {
-            SaveState.clear(); // Clear any existing save state
-            this.scene.start('WorldScene');
+        // Set up keyboard controls
+        this.wasdKeys = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            enter: Phaser.Input.Keyboard.KeyCodes.ENTER
         });
 
-        this.continueText.on('pointerdown', () => {
+        // Set up click handlers
+        this.menuItems[0].setInteractive().on('pointerdown', () => this.selectMenuItem(0));
+        this.menuItems[1].setInteractive().on('pointerdown', () => this.selectMenuItem(1));
+
+        // Highlight initial selection
+        this.updateSelection();
+
+        // Call resizeGame after initializing text objects
+        this.resizeGame();
+
+        window.addEventListener('resize', this.resizeGame.bind(this));
+    }
+
+    update() {
+        // Handle menu navigation
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.up)) {
+            this.selectedIndex = (this.selectedIndex - 1 + this.menuItems.length) % this.menuItems.length;
+            this.updateSelection();
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.down)) {
+            this.selectedIndex = (this.selectedIndex + 1) % this.menuItems.length;
+            this.updateSelection();
+        }
+
+        // Handle selection
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.enter)) {
+            this.selectMenuItem(this.selectedIndex);
+        }
+    }
+
+    updateSelection() {
+        // Update all menu items
+        this.menuItems.forEach((item, index) => {
+            const text = item.text;
+            if (index === this.selectedIndex) {
+                item.setStyle({ fill: '#ffff00' }); // Highlight selected item
+                item.setText('> ' + text.substring(2)); // Replace bullet with arrow
+            } else {
+                item.setStyle({ fill: '#fff' });
+                item.setText('• ' + text.substring(2)); // Restore bullet
+            }
+        });
+    }
+
+    selectMenuItem(index) {
+        if (index === 0) {
+            SaveState.clear(); // Clear any existing save state
+            this.scene.start('WorldScene');
+        } else if (index === 1) {
             const gameState = SaveState.load();
             if (gameState) {
                 this.scene.start(gameState.scene, gameState.data);
             } else {
                 this.scene.start('WorldScene');
             }
-        });
-
-        // Call resizeGame after initializing text objects
-        this.resizeGame();
-
-        window.addEventListener('resize', this.resizeGame.bind(this));
+        }
     }
 
     resizeGame() {
@@ -56,7 +109,14 @@ export default class StartScene extends Phaser.Scene {
 
         // Center the text elements
         this.titleText.setPosition(width / 2, height / 4);
-        this.startText.setPosition(width / 2, height / 2);
-        this.continueText.setPosition(width / 2, height / 2 + 50);
+        this.menuItems[0].setPosition(width / 2, height / 2);
+        this.menuItems[1].setPosition(width / 2, height / 2 + 50);
+    }
+
+    startBattle(npcData) {
+        this.scene.start('BattleScene', {
+            playerData: this.playerManager.getPlayerData(),
+            npcData: npcData // Pass the npcData including triggerRadius
+        });
     }
 }

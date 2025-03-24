@@ -4,9 +4,22 @@ import StartScene from "./scenes/StartScene";
 import WorldScene from "./scenes/WorldScene";
 import BattleScene from "./scenes/BattleScene";
 import ShooterScene from "./scenes/ShooterScene";
+import MapScene from "./scenes/MapScene";
 
 import PlayerManager from "./managers/PlayerManager";
 import NpcManager from "./managers/NpcManager";
+
+// Prevent zooming
+document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === '+' || e.key === '-' || e.key === '=')) {
+        e.preventDefault();
+    }
+});
+
+// Prevent pinch zoom on mobile
+document.addEventListener('gesturestart', (e) => {
+    e.preventDefault();
+});
 
 const config = {
     type: Phaser.AUTO,
@@ -16,11 +29,11 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            // gravity: { y: 0 },
+            gravity: { y: 0 },
             debug: false
         }
     },
-    scene: [StartScene, WorldScene, BattleScene, ShooterScene]
+    scene: [StartScene, WorldScene, BattleScene, ShooterScene, MapScene]
 };
 
 const game = new Phaser.Game(config);

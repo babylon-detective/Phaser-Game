@@ -29,7 +29,7 @@ class WorldControls extends BaseControls {
 
     update() {
         this.resetVelocity();
-        const speed = 160;
+        const speed = 260;
 
         if (this.wasdKeys.left.isDown) {
             this.player.body.setVelocityX(-speed);
@@ -105,7 +105,7 @@ export default class PlayerManager {
         }
 
         // Configure player body physics
-        this.player.body.setCollideWorldBounds(false); // or true if you prefer
+        this.player.body.setCollideWorldBounds(true); // or true if you prefer
         this.player.body.setBounce(0.2);
 
         // Create a cameraBox for smooth camera following
@@ -140,6 +140,13 @@ export default class PlayerManager {
             health: 100, // example property
             level: 1,    // example property
         };
+    }
+
+    getPlayerPosition() {
+        if (this.player) {
+            return { x: this.player.x, y: this.player.y };
+        }
+        return { x: 0, y: 0 }; // Default position if player is not initialized
     }
 
     update() {

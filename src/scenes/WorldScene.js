@@ -3,6 +3,7 @@ import Phaser from "phaser";
 import SaveState from "../SaveState";
 import PlayerManager from "../managers/PlayerManager";
 import NpcManager from "../managers/NpcManager";
+import MapScene from "./MapScene";
 
 export default class WorldScene extends Phaser.Scene {
     constructor() {
@@ -28,26 +29,43 @@ export default class WorldScene extends Phaser.Scene {
 
     create() {
         console.log('WorldScene create');
+
+        // Define a large world size
+        const worldWidth = 2500; // Example width
+        const worldHeight = 2000; // Example height
+
         // Tilemap setup
-        const map = this.make.tilemap({ key: 'map' });
-        const tilesetGrass = map.addTilesetImage('TX Tileset Grass', 'tilesGrass', 32, 32, 0, 0);
-        const tilesetStoneGround = map.addTilesetImage('TX Tileset Stone Ground', 'tilesStoneGround');
-        const tilesetWall = map.addTilesetImage('TX Tileset Wall', 'tilesWall');
-        const tilesetStruct = map.addTilesetImage('TX Struct', 'tilesStruct');
-        const tilesetProps = map.addTilesetImage('TX Props', 'tilesProps');
-        const tilesetPlants = map.addTilesetImage('TX Plants', 'tilesPlants');
+        this.map = this.make.tilemap({ key: 'map' });
+        const tilesetGrass = this.map.addTilesetImage('TX Tileset Grass', 'tilesGrass', 32, 32, 0, 0);
+        const tilesetStoneGround = this.map.addTilesetImage('TX Tileset Stone Ground', 'tilesStoneGround');
+        const tilesetWall = this.map.addTilesetImage('TX Tileset Wall', 'tilesWall');
+        const tilesetStruct = this.map.addTilesetImage('TX Struct', 'tilesStruct');
+        const tilesetProps = this.map.addTilesetImage('TX Props', 'tilesProps');
+        const tilesetPlants = this.map.addTilesetImage('TX Plants', 'tilesPlants');
 
-        map.createLayer('Ground', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        map.createLayer('Walls', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        map.createLayer('Plants', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        map.createLayer('Props', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
+        const groundLayer = this.map.createLayer('Ground', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
+        const wallsLayer = this.map.createLayer('Walls', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
+        const plantsLayer = this.map.createLayer('Plants', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
+        const propsLayer = this.map.createLayer('Props', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
 
-        // Camera scaling
-        const scaleX = this.cameras.main.width / map.widthInPixels;
-        const scaleY = this.cameras.main.height / map.heightInPixels;
-        const scale = Math.min(scaleX, scaleY);
+        // Move the tilemap layers to the desired position
+        const offsetX = 50; // Example offset
+        const offsetY = 50; // Example offset
+        groundLayer.setPosition(offsetX, offsetY);
+        wallsLayer.setPosition(offsetX, offsetY);
+        plantsLayer.setPosition(offsetX, offsetY);
+        propsLayer.setPosition(offsetX, offsetY);
 
-        this.cameras.main.setZoom(scale);
+        // Set world and camera bounds using worldWidth and worldHeight
+        this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+        this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+
+        // Center the camera on the map
+        this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
+
+        // Log dimensions for debugging
+        console.log(`World dimensions: ${worldWidth}x${worldHeight}`);
+        console.log(`Camera position: ${this.cameras.main.scrollX}, ${this.cameras.main.scrollY}`);
 
         // ---- PLAYER MANAGER ----
         this.playerManager = new PlayerManager(this);
@@ -60,18 +78,12 @@ export default class WorldScene extends Phaser.Scene {
             this.cameras.main.centerOn(this.returnPosition.x, this.returnPosition.y);
         } else {
             console.log('Centering camera on map center');
-            this.cameras.main.centerOn(map.widthInPixels / 2, map.heightInPixels / 2);
+            this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
         }
 
         // ---- NPC MANAGER ----
         this.npcManager = new NpcManager(this);
-
-        // Example NPC spawns
-        this.npcManager.spawnNPC(map.tileToWorldX(10), map.tileToWorldY(8));
-        this.npcManager.spawnNPC(500, 350);
-        this.npcManager.spawnNPC(1200, 350);
-        this.npcManager.spawnNPC(0,0); 
-        this.npcManager.spawnNPC(1000,1000);
+        this.npcManager.create(); // Call create to initialize NPCs
 
         // Save button
         const saveLocation = this.add.text(100, 200, 'Save Location', { fontSize: '24px', fill: '#fff' }).setInteractive();
@@ -79,8 +91,35 @@ export default class WorldScene extends Phaser.Scene {
             SaveState.save({ scene: 'WorldScene', data: { x: 100, y: 200 } });
         });
 
-         // Basic text
-         this.add.text(100, 100, 'World View', { fontSize: '32px', fill: '#fff' });
+        // Basic text
+        this.add.text(100, 100, 'World View', { fontSize: '32px', fill: '#fff' });
+
+        function adjustCameraForDevice() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            if (width < 600) {
+                // Mobile portrait
+                this.cameras.main.setZoom(0.5);
+            } else if (width < 900) {
+                // Mobile landscape or small tablet
+                this.cameras.main.setZoom(0.75);
+            } else {
+                // Tablet or desktop
+                this.cameras.main.setZoom(1);
+            }
+        }
+
+        window.addEventListener('resize', adjustCameraForDevice.bind(this));
+        adjustCameraForDevice.call(this);
+    
+        // Set up M key to open the map
+        this.input.keyboard.on('keydown-M', () => {
+            this.scene.pause();
+            this.scene.launch('MapScene', {
+                playerPosition: this.playerManager.getPlayerPosition()
+            });
+        });
     }
 
     update() {
@@ -136,5 +175,12 @@ export default class WorldScene extends Phaser.Scene {
         
         // Call parent shutdown
         super.shutdown();
+    }
+
+    startBattle(npcData) {
+        this.scene.start('BattleScene', {
+            playerData: this.playerManager.getPlayerData(),
+            npcData: npcData // Pass the npcData including triggerRadius
+        });
     }
 }
