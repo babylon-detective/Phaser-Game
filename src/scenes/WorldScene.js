@@ -177,10 +177,33 @@ export default class WorldScene extends Phaser.Scene {
         super.shutdown();
     }
 
-    startBattle(npcData) {
+    startBattle(npcDataArray) {
+        console.log('[WorldScene] Starting battle with NPC data:', npcDataArray);
+        
+        // Ensure we have valid NPC data
+        if (!npcDataArray) {
+            console.error('[WorldScene] No NPC data provided for battle');
+            return;
+        }
+
+        // If npcDataArray is a single NPC, convert it to an array
+        const npcs = Array.isArray(npcDataArray) ? npcDataArray : [npcDataArray];
+        
+        // Get player data
+        const playerData = this.playerManager.getPlayerData();
+        if (!playerData) {
+            console.error('[WorldScene] No player data available');
+            return;
+        }
+
+        console.log('[WorldScene] Starting battle scene with:', {
+            playerData,
+            npcDataArray: npcs
+        });
+
         this.scene.start('BattleScene', {
-            playerData: this.playerManager.getPlayerData(),
-            npcData: npcData // Pass the npcData including triggerRadius
+            playerData,
+            npcDataArray: npcs
         });
     }
 }

@@ -348,24 +348,76 @@ export default class NpcManager {
             return;
         }
 
-        this.npcs.forEach(npc => {
+        console.log('[NpcManager] Checking interactions with player at:', {
+            x: player.x,
+            y: player.y
+        });
+
+        // Find all NPCs that are connected through overlapping trigger radii
+        const connectedNPCs = this.findConnectedNPCs(player);
+        
+        if (connectedNPCs.length > 0) {
+            console.log(`[NpcManager] Found ${connectedNPCs.length} connected NPCs:`, 
+                connectedNPCs.map(npc => `${npc.npcData.type} (ID: ${npc.npcData.id})`));
+            this.startBattle(connectedNPCs);
+        }
+    }
+
+    findConnectedNPCs(player) {
+        const connectedNPCs = new Set();
+        const queue = [];
+        
+        // First, find NPCs directly overlapping with player
+        const initialNPCs = this.npcs.filter(npc => {
             const distance = Phaser.Math.Distance.Between(
                 player.x, player.y,
                 npc.x, npc.y
             );
-
-            if (distance <= npc.npcData.triggerRadius) {
-                this.startBattle(npc);
-            }
+            return distance <= npc.npcData.triggerRadius;
         });
+
+        // Add initial NPCs to queue and connected set
+        initialNPCs.forEach(npc => {
+            queue.push(npc);
+            connectedNPCs.add(npc);
+        });
+
+        // Process queue to find all connected NPCs
+        while (queue.length > 0) {
+            const currentNPC = queue.shift();
+            
+            // Find all NPCs that overlap with current NPC
+            this.npcs.forEach(otherNPC => {
+                if (!connectedNPCs.has(otherNPC)) {
+                    const distance = Phaser.Math.Distance.Between(
+                        currentNPC.x, currentNPC.y,
+                        otherNPC.x, otherNPC.y
+                    );
+                    
+                    // Check if trigger radii overlap
+                    const combinedRadius = currentNPC.npcData.triggerRadius + otherNPC.npcData.triggerRadius;
+                    if (distance <= combinedRadius) {
+                        connectedNPCs.add(otherNPC);
+                        queue.push(otherNPC);
+                    }
+                }
+            });
+        }
+
+        return Array.from(connectedNPCs);
     }
 
-    startBattle(npc) {
-        if (this.cooldowns.has(npc.npcData.id)) {
+    startBattle(npcs) {
+        // Check if any of the NPCs are on cooldown
+        const availableNPCs = npcs.filter(npc => !this.cooldowns.has(npc.npcData.id));
+        
+        if (availableNPCs.length === 0) {
+            console.log('[NpcManager] All overlapping NPCs are on cooldown');
             return;
         }
 
-        console.log(`Starting battle with ${npc.npcData.type} NPC (ID: ${npc.npcData.id})`);
+        console.log(`[NpcManager] Starting battle with ${availableNPCs.length} NPCs:`, 
+            availableNPCs.map(npc => `${npc.npcData.type} (ID: ${npc.npcData.id})`));
         
         // Store player data for battle
         const playerData = {
@@ -375,17 +427,19 @@ export default class NpcManager {
             level: 1
         };
 
-        // Start battle scene
+        // Start battle scene with all available NPCs
         this.scene.scene.pause('WorldScene');
         this.scene.scene.launch('BattleScene', { 
             playerData: playerData,
-            npcData: npc.npcData
+            npcDataArray: availableNPCs.map(npc => npc.npcData)
         });
 
-        // Set cooldown for this NPC
-        this.cooldowns.set(npc.npcData.id, this.cooldownDuration);
-        this.scene.time.delayedCall(this.cooldownDuration, () => {
-            this.cooldowns.delete(npc.npcData.id);
+        // Set cooldown for all participating NPCs
+        availableNPCs.forEach(npc => {
+            this.cooldowns.set(npc.npcData.id, this.cooldownDuration);
+            this.scene.time.delayedCall(this.cooldownDuration, () => {
+                this.cooldowns.delete(npc.npcData.id);
+            });
         });
     }
 
