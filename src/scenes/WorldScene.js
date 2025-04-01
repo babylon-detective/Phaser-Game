@@ -18,58 +18,119 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     preload() {
+        console.log('Loading tilemap...');
         this.load.image('tilesGrass', '/assets/tilesets/TX Tileset Grass.png');
         this.load.image('tilesStoneGround', '/assets/tilesets/TX Tileset Stone Ground.png');
         this.load.image('tilesWall', '/assets/tilesets/TX Tileset Wall.png');
         this.load.image('tilesStruct', '/assets/tilesets/TX Struct.png');
         this.load.image('tilesProps', '/assets/tilesets/TX Props.png');
         this.load.image('tilesPlants', '/assets/tilesets/TX Plants.png');
+        this.load.image('tilesSea', '/assets/tilesets/TX Sea.png');
         this.load.tilemapTiledJSON('map', '/assets/tilemaps/TownScene.tmj');
     }
 
     create() {
         console.log('WorldScene create');
-
-        // Define a large world size
-        const worldWidth = 2500; // Example width
-        const worldHeight = 2000; // Example height
-
-        // Tilemap setup
+        
+        // Create the tilemap
         this.map = this.make.tilemap({ key: 'map' });
-        const tilesetGrass = this.map.addTilesetImage('TX Tileset Grass', 'tilesGrass', 32, 32, 0, 0);
-        const tilesetStoneGround = this.map.addTilesetImage('TX Tileset Stone Ground', 'tilesStoneGround');
-        const tilesetWall = this.map.addTilesetImage('TX Tileset Wall', 'tilesWall');
-        const tilesetStruct = this.map.addTilesetImage('TX Struct', 'tilesStruct');
-        const tilesetProps = this.map.addTilesetImage('TX Props', 'tilesProps');
-        const tilesetPlants = this.map.addTilesetImage('TX Plants', 'tilesPlants');
 
-        const groundLayer = this.map.createLayer('Ground', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        const wallsLayer = this.map.createLayer('Walls', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        const plantsLayer = this.map.createLayer('Plants', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
-        const propsLayer = this.map.createLayer('Props', [tilesetGrass, tilesetStoneGround, tilesetWall, tilesetStruct, tilesetProps, tilesetPlants]);
+        // Load tilesets
+        const tilesets = {
+            sea: this.map.addTilesetImage('TX Sea', 'tilesSea'),
+            grass: this.map.addTilesetImage('TX Tileset Grass', 'tilesGrass'),
+            stoneGround: this.map.addTilesetImage('TX Tileset Stone Ground', 'tilesStoneGround'),
+            wall: this.map.addTilesetImage('TX Tileset Wall', 'tilesWall'),
+            struct: this.map.addTilesetImage('TX Struct', 'tilesStruct'),
+            props: this.map.addTilesetImage('TX Props', 'tilesProps'),
+            plants: this.map.addTilesetImage('TX Plants', 'tilesPlants')
+        };
 
-        // Move the tilemap layers to the desired position
-        const offsetX = 50; // Example offset
-        const offsetY = 50; // Example offset
-        groundLayer.setPosition(offsetX, offsetY);
-        wallsLayer.setPosition(offsetX, offsetY);
-        plantsLayer.setPosition(offsetX, offsetY);
-        propsLayer.setPosition(offsetX, offsetY);
+        // Create layers
+        const layers = {
+            sea: this.map.createLayer('Sea', [tilesets.sea]),
+            ground: this.map.createLayer('Ground', Object.values(tilesets)),
+            walls: this.map.createLayer('Walls', Object.values(tilesets)),
+            plants: this.map.createLayer('Plants', Object.values(tilesets)),
+            props: this.map.createLayer('Props', Object.values(tilesets))
+        };
 
-        // Set world and camera bounds using worldWidth and worldHeight
-        this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
-        this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+        // Calculate exact tilemap dimensions - ONLY DEFINE ONCE
+        const mapWidth = this.map.width * this.map.tileWidth;
+        const mapHeight = this.map.height * this.map.tileHeight;
+        
+        console.log('Exact map dimensions:', { width: mapWidth, height: mapHeight });
 
-        // Center the camera on the map
-        this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
+        // Make world bounds larger than the map
+        const worldPadding = 2800; // 1000 pixels of extra space on each side
+        const worldWidth = mapWidth + (worldPadding * 2);
+        const worldHeight = mapHeight + (worldPadding * 2);
 
-        // Log dimensions for debugging
-        console.log(`World dimensions: ${worldWidth}x${worldHeight}`);
-        console.log(`Camera position: ${this.cameras.main.scrollX}, ${this.cameras.main.scrollY}`);
+        // Set the larger bounds
+        this.physics.world.setBounds(
+            -worldPadding,  // Start bounds earlier
+            -worldPadding,  // Start bounds higher
+            worldWidth,     // Wider world
+            worldHeight     // Taller world
+        );
 
-        // ---- PLAYER MANAGER ----
+        // Set camera bounds to match
+        this.cameras.main.setBounds(
+            -worldPadding,
+            -worldPadding,
+            worldWidth,
+            worldHeight
+        );
+
+        // Add this after setting the bounds
+        console.log('World bounds:', {
+            map: { width: mapWidth, height: mapHeight },
+            world: {
+                x: -worldPadding,
+                y: -worldPadding,
+                width: worldWidth,
+                height: worldHeight
+            }
+        });
+
+        // Create player manager
         this.playerManager = new PlayerManager(this);
-        this.playerManager.create(); // sets up the player
+        this.playerManager.create();
+
+        // Set up camera to follow player AFTER player is created
+        if (this.playerManager.player) {
+            // Make sure camera is following the player
+            this.cameras.main.startFollow(this.playerManager.player, true, 0.1, 0.1);
+        }
+
+        // Set up collisions
+        layers.walls.setCollisionByProperty({ collision: true });
+        this.physics.add.collider(this.playerManager.player, layers.walls);
+
+        // Enable world bounds collision for player
+        if (this.playerManager.player) {
+            this.playerManager.player.body.setCollideWorldBounds(true);
+            this.playerManager.player.body.onWorldBounds = true;
+        }
+
+        // Add world bounds collision listener
+        this.physics.world.on('worldbounds', (body) => {
+            if (body.gameObject === this.playerManager.player && 
+                this.playerManager.controls &&
+                this.playerManager.controls.isRunning) {
+                console.log('World bounds collision detected');
+                this.playerManager.controls.resetState();
+            }
+        });
+
+        // Visual debugging for world bounds
+        const debugGraphics = this.add.graphics();
+        debugGraphics.lineStyle(2, 0xff0000); // Red line
+        debugGraphics.strokeRect(0, 0, worldWidth, worldHeight);
+        
+        // ---- NPC MANAGER ----
+        this.npcManager = new NpcManager(this);
+        this.npcManager.create(); // Call create to initialize NPCs
 
         // Position player and camera
         if (this.returnPosition && this.playerManager.player) {
@@ -78,12 +139,8 @@ export default class WorldScene extends Phaser.Scene {
             this.cameras.main.centerOn(this.returnPosition.x, this.returnPosition.y);
         } else {
             console.log('Centering camera on map center');
-            this.cameras.main.centerOn(worldWidth / 2, worldHeight / 2);
+            this.cameras.main.centerOn(mapWidth / 2, mapHeight / 2);
         }
-
-        // ---- NPC MANAGER ----
-        this.npcManager = new NpcManager(this);
-        this.npcManager.create(); // Call create to initialize NPCs
 
         // Save button
         const saveLocation = this.add.text(100, 200, 'Save Location', { fontSize: '24px', fill: '#fff' }).setInteractive();
@@ -118,6 +175,19 @@ export default class WorldScene extends Phaser.Scene {
             this.scene.pause();
             this.scene.launch('MapScene', {
                 playerPosition: this.playerManager.getPlayerPosition()
+            });
+        });
+
+        // Add click debugging
+        this.input.on('pointerdown', (pointer) => {
+            const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            console.log('Click position:', {
+                screen: { x: pointer.x, y: pointer.y },
+                world: { x: worldPoint.x, y: worldPoint.y },
+                tile: {
+                    x: this.map.worldToTileX(worldPoint.x),
+                    y: this.map.worldToTileY(worldPoint.y)
+                }
             });
         });
     }

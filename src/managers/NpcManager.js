@@ -348,10 +348,10 @@ export default class NpcManager {
             return;
         }
 
-        console.log('[NpcManager] Checking interactions with player at:', {
-            x: player.x,
-            y: player.y
-        });
+        // console.log('[NpcManager] Checking interactions with player at:', {
+        //     x: player.x,
+        //     y: player.y
+        // });
 
         // Find all NPCs that are connected through overlapping trigger radii
         const connectedNPCs = this.findConnectedNPCs(player);
@@ -467,5 +467,23 @@ export default class NpcManager {
         const dy = y - this.playerStartPosition.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         return distance < this.minimumDistanceFromPlayer;
+    }
+
+    isPlayerInTriggerRadius() {
+        if (!this.player || !this.npcs) return false;
+        
+        for (const npc of this.npcs) {
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x, this.player.y,
+                npc.x, npc.y
+            );
+            
+            // Check if player is within this NPC's trigger radius
+            if (distance <= npc.triggerRadius) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 }

@@ -12,9 +12,9 @@
   "license": "ISC",
   "description": "JRPG",
   "dependencies": {
-    "phaser": "^3.87.0"
+    "phaser": "^3.70.0"
   },
   "devDependencies": {
-    "vite": "^6.2.3"
+    "vite": "^5.0.0"
   }
 }
