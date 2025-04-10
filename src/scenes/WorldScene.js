@@ -172,6 +172,7 @@ export default class WorldScene extends Phaser.Scene {
     
         // Set up M key to open the map
         this.input.keyboard.on('keydown-M', () => {
+            console.log('[WorldScene] M key pressed, opening map');
             this.scene.pause();
             this.scene.launch('MapScene', {
                 playerPosition: this.playerManager.getPlayerPosition()
@@ -215,6 +216,41 @@ export default class WorldScene extends Phaser.Scene {
 
     resume(sys, data) {
         console.log('WorldScene resume with data:', data);
+        
+        // Re-enable input system
+        this.input.keyboard.enabled = true;
+        this.input.mouse.enabled = true;
+        
+        if (data?.battleVictory && data?.defeatedNpcIds && this.npcManager) {
+            console.log('Processing battle victory, removing defeated NPCs:', data.defeatedNpcIds);
+            
+            data.defeatedNpcIds.forEach(id => {
+                const npc = this.npcManager.npcs.find(npc => npc.npcData.id === id);
+                if (npc) {
+                    let blinkCount = 0;
+                    const blinkInterval = this.time.addEvent({
+                        delay: 200,
+                        callback: () => {
+                            npc.setAlpha(npc.alpha === 1 ? 0 : 1);
+                            blinkCount++;
+                            if (blinkCount >= 6) {
+                                blinkInterval.destroy();
+                                this.tweens.add({
+                                    targets: [npc, npc.triggerZone],
+                                    alpha: 0,
+                                    duration: 500,
+                                    onComplete: () => {
+                                        this.npcManager.removeDefeatedNpcs([id]);
+                                    }
+                                });
+                            }
+                        },
+                        loop: true
+                    });
+                }
+            });
+        }
+
         if (data?.returnPosition && this.playerManager?.player) {
             this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
             this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
@@ -250,27 +286,23 @@ export default class WorldScene extends Phaser.Scene {
     startBattle(npcDataArray) {
         console.log('[WorldScene] Starting battle with NPC data:', npcDataArray);
         
-        // Ensure we have valid NPC data
         if (!npcDataArray) {
             console.error('[WorldScene] No NPC data provided for battle');
             return;
         }
 
-        // If npcDataArray is a single NPC, convert it to an array
         const npcs = Array.isArray(npcDataArray) ? npcDataArray : [npcDataArray];
-        
-        // Get player data
         const playerData = this.playerManager.getPlayerData();
+        
         if (!playerData) {
             console.error('[WorldScene] No player data available');
             return;
         }
 
-        console.log('[WorldScene] Starting battle scene with:', {
-            playerData,
-            npcDataArray: npcs
-        });
-
+        // Stop this scene completely before starting battle
+        this.scene.stop('WorldScene');
+        
+        // Start battle scene fresh
         this.scene.start('BattleScene', {
             playerData,
             npcDataArray: npcs

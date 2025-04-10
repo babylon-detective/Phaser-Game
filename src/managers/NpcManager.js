@@ -469,21 +469,31 @@ export default class NpcManager {
         return distance < this.minimumDistanceFromPlayer;
     }
 
-    isPlayerInTriggerRadius() {
-        if (!this.player || !this.npcs) return false;
+    // Add method to remove defeated NPCs
+    removeDefeatedNpcs(defeatedNpcIds) {
+        console.log('Removing defeated NPCs:', defeatedNpcIds);
         
-        for (const npc of this.npcs) {
-            const distance = Phaser.Math.Distance.Between(
-                this.player.x, this.player.y,
-                npc.x, npc.y
-            );
-            
-            // Check if player is within this NPC's trigger radius
-            if (distance <= npc.triggerRadius) {
-                return true;
+        defeatedNpcIds.forEach(id => {
+            const npcIndex = this.npcs.findIndex(npc => npc.npcData.id === id);
+            if (npcIndex !== -1) {
+                const npc = this.npcs[npcIndex];
+                
+                // Remove trigger zone
+                if (npc.triggerZone) {
+                    npc.triggerZone.destroy();
+                }
+                
+                // Remove the NPC
+                npc.destroy();
+                
+                // Remove from array
+                this.npcs.splice(npcIndex, 1);
+                
+                // Remove from cooldowns
+                this.cooldowns.delete(id);
+                
+                console.log(`Removed NPC with ID: ${id}`);
             }
-        }
-        
-        return false;
+        });
     }
 }
