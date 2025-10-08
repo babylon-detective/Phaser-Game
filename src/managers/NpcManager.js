@@ -11,8 +11,21 @@ export default class NpcManager {
         this.isReturningFromBattle = false;
         this.playerStartPosition = { x: 100, y: 100 }; // Example player start position
         this.minimumDistanceFromPlayer = 200; // Minimum distance from player
+        this.npcTypes = [];
+        this.defeatedNpcIds = new Set(); // Track defeated NPCs
+        this.lastBattleTime = 0;
+        this.battleCooldownTime = 5000; // 5 seconds cooldown between battles
 
-        console.log('NpcManager: Initialized');
+        // Default spawn configuration
+        this.spawnConfig = {
+            totalNPCs: 5,
+            minDistanceBetweenNPCs: 50,
+            spawnAttempts: 50,
+            spawnOnGroundOnly: true,
+            spawnRadius: 100
+        };
+
+        console.log('NpcManager: Initialized with default spawn config:', this.spawnConfig);
 
         // NPC Types Configuration
         this.npcTypes = {
@@ -50,42 +63,36 @@ export default class NpcManager {
             }
         };
 
-        // NPC Placement Configuration
-        this.npcPlacements = {
-            // Single NPCs at specific locations
-            SINGLE_NPCS: [
-                { type: 'GUARD', x: 500, y: 350, behavior: 'patrol' },
-                { type: 'MERCHANT', x: 1200, y: 350, behavior: 'stationary' }
-            ],
-            // NPC Clusters with overlapping trigger zones
-            CLUSTERS: [
-                {
-                    center: { x: 800, y: 400 },
-                    radius: 100,
-                    npcs: [
-                        { type: 'VILLAGER', count: 3, spacing: 40 },
-                        { type: 'GUARD', count: 1, spacing: 60 }
-                    ]
-                },
-                {
-                    center: { x: 1200, y: 600 },
-                    radius: 150,
-                    npcs: [
-                        { type: 'VILLAGER', count: 5, spacing: 35 },
-                        { type: 'GUARD', count: 2, spacing: 50 }
-                    ]
-                }
-            ]
-        };
-
-        // Spawn configuration
-        this.spawnConfig = {
-            totalNPCs: 5, // Reduced for testing
-            minDistanceBetweenNPCs: 50,
-            spawnAttempts: 50,
-            spawnOnGroundOnly: true,
-            spawnRadius: 100 // Reduced radius to keep NPCs closer
-        };
+        // Fixed NPC Spawn Locations - These NPCs will always spawn at the same positions
+        // Each NPC has a permanent unique ID based on its position in this array
+        this.fixedNpcSpawns = [
+            // Area 1: Village Center
+            { id: 'npc_village_guard_1', type: 'GUARD', x: 200, y: 250, behavior: 'patrol' },
+            { id: 'npc_village_merchant_1', type: 'MERCHANT', x: 350, y: 280, behavior: 'stationary' },
+            { id: 'npc_village_villager_1', type: 'VILLAGER', x: 450, y: 220, behavior: 'wander' },
+            { id: 'npc_village_villager_2', type: 'VILLAGER', x: 280, y: 180, behavior: 'wander' },
+            
+            // Area 2: East Side
+            { id: 'npc_east_guard_1', type: 'GUARD', x: 650, y: 300, behavior: 'patrol' },
+            { id: 'npc_east_villager_1', type: 'VILLAGER', x: 750, y: 250, behavior: 'wander' },
+            { id: 'npc_east_merchant_1', type: 'MERCHANT', x: 850, y: 320, behavior: 'stationary' },
+            
+            // Area 3: South Side  
+            { id: 'npc_south_guard_1', type: 'GUARD', x: 400, y: 500, behavior: 'patrol' },
+            { id: 'npc_south_villager_1', type: 'VILLAGER', x: 300, y: 450, behavior: 'wander' },
+            { id: 'npc_south_villager_2', type: 'VILLAGER', x: 500, y: 480, behavior: 'wander' },
+            
+            // Area 4: North Side
+            { id: 'npc_north_guard_1', type: 'GUARD', x: 600, y: 100, behavior: 'patrol' },
+            { id: 'npc_north_villager_1', type: 'VILLAGER', x: 450, y: 80, behavior: 'wander' },
+            { id: 'npc_north_merchant_1', type: 'MERCHANT', x: 750, y: 120, behavior: 'stationary' },
+            
+            // Additional NPCs for variety
+            { id: 'npc_extra_villager_1', type: 'VILLAGER', x: 150, y: 400, behavior: 'wander' },
+            { id: 'npc_extra_guard_1', type: 'GUARD', x: 900, y: 200, behavior: 'patrol' }
+        ];
+        
+        console.log(`NpcManager: Loaded ${this.fixedNpcSpawns.length} fixed NPC spawn locations`);
 
         console.log('NpcManager: Configuration loaded', {
             npcTypes: Object.keys(this.npcTypes),
@@ -93,86 +100,79 @@ export default class NpcManager {
         });
     }
 
+    init(config) {
+        console.log('NpcManager: Initializing with config:', config);
+        this.npcTypes = config.npcTypes || [];
+        this.spawnConfig = {
+            ...this.spawnConfig, // Keep default values
+            ...config.spawnConfig // Override with provided values
+        };
+        
+        // Convert defeatedNpcIds array to Set if provided
+        if (config.defeatedNpcIds) {
+            this.defeatedNpcIds = new Set(config.defeatedNpcIds);
+            console.log('NpcManager: Initialized with defeated NPCs:', Array.from(this.defeatedNpcIds));
+        } else {
+            this.defeatedNpcIds = new Set();
+        }
+        
+        console.log('NpcManager: Updated spawn config:', this.spawnConfig);
+    }
+
     create() {
-        console.log('NpcManager: Create method called');
-        if (!this.scene.map) {
-            console.error('NpcManager: No map found in scene!');
-            return;
-        }
-        console.log('NpcManager: Map found, starting NPC generation');
+        console.log('[NpcManager] Create method called');
         
-        // Store map reference for later use
-        this.map = this.scene.map;
-        
-        // Generate random NPCs
-        this.generateRandomNPCs();
-    }
-
-    generateRandomNPCs() {
-        console.log('NpcManager: Starting random NPC generation');
-        if (!this.map) {
-            console.error('NpcManager: No tilemap found in scene');
-            return;
+        // Clear existing NPCs if any
+        if (this.npcs) {
+            this.npcs.forEach(npc => {
+                if (npc.triggerZone) npc.triggerZone.destroy();
+                npc.destroy();
+            });
+            this.npcs = [];
         }
 
-        const groundLayer = this.map.getLayer('Ground').tilemapLayer;
-        const wallsLayer = this.map.getLayer('Walls').tilemapLayer;
+        console.log('[NpcManager] Starting fixed NPC generation from predefined spawn points');
+        console.log('[NpcManager] Total spawn points:', this.fixedNpcSpawns.length);
+        console.log('[NpcManager] Defeated NPCs:', Array.from(this.defeatedNpcIds));
         
-        if (!groundLayer || !wallsLayer) {
-            console.error('NpcManager: Missing required map layers!');
-            return;
-        }
-
-        console.log('NpcManager: Map layers found, proceeding with spawn');
-        
+        // Spawn NPCs from fixed spawn locations
         let spawnedCount = 0;
-        let attempts = 0;
-
-        // Get player position for relative spawning
-        const playerPosition = this.scene.playerManager.getPlayerPosition();
-        const playerX = playerPosition.x;
-        const playerY = playerPosition.y;
-
-        console.log(`NpcManager: Player position - X: ${playerX}, Y: ${playerY}`);
-
-        while (spawnedCount < this.spawnConfig.totalNPCs && attempts < this.spawnConfig.spawnAttempts) {
-            // Generate position relative to player
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * this.spawnConfig.spawnRadius + this.minimumDistanceFromPlayer;
-            const worldX = playerX + Math.cos(angle) * distance;
-            const worldY = playerY + Math.sin(angle) * distance;
-
-            console.log(`NpcManager: Attempting spawn at X: ${worldX.toFixed(0)}, Y: ${worldY.toFixed(0)}`);
-
-            // Check if position is valid
-            if (this.isValidSpawnPosition(worldX, worldY, groundLayer, wallsLayer)) {
-                const npcType = this.getRandomNPCType();
-                console.log(`NpcManager: Selected NPC type: ${npcType}`);
-                this.spawnNPC(worldX, worldY, npcType, this.getRandomBehavior(npcType));
-                spawnedCount++;
-                console.log(`NpcManager: Successfully spawned ${npcType} at (${worldX.toFixed(0)}, ${worldY.toFixed(0)})`);
-            } else {
-                console.log('NpcManager: Invalid spawn position, trying another location');
+        
+        this.fixedNpcSpawns.forEach((spawnData, index) => {
+            // Check if this NPC was previously defeated
+            if (this.defeatedNpcIds.has(spawnData.id)) {
+                console.log(`[NpcManager] Skipping defeated NPC: ${spawnData.id}`);
+                return;
             }
+            
+            // Spawn the NPC at its fixed location
+            const npc = this.spawnFixedNPC(spawnData);
+            if (npc) {
+                this.npcs.push(npc);
+                spawnedCount++;
+                console.log(`[NpcManager] Spawned ${spawnData.type} at (${spawnData.x}, ${spawnData.y}) - ID: ${spawnData.id}`);
+            }
+        });
 
-            attempts++;
-        }
-
-        console.log(`NpcManager: Generation complete. Spawned ${spawnedCount} NPCs after ${attempts} attempts`);
-        console.log('NpcManager: Current NPCs:', this.npcs.map(npc => ({
-            type: npc.npcData.type,
-            position: `(${npc.x.toFixed(0)}, ${npc.y.toFixed(0)})`
-        })));
+        console.log(`[NpcManager] Generation complete. Spawned ${spawnedCount} out of ${this.fixedNpcSpawns.length} NPCs`);
+        console.log(`[NpcManager] Active NPCs: ${this.npcs.length}, Defeated: ${this.defeatedNpcIds.size}`);
     }
 
-    isValidSpawnPosition(worldX, worldY, groundLayer, wallsLayer) {
+    isValidSpawnPosition(worldX, worldY, playerX, playerY) {
         // Check if position is within map bounds
         if (!this.scene.physics.world.bounds.contains(worldX, worldY)) {
             return false;
         }
 
+        // Check if position is too close to player
+        const distanceToPlayer = Phaser.Math.Distance.Between(worldX, worldY, playerX, playerY);
+        if (distanceToPlayer < this.minimumDistanceFromPlayer) {
+            return false;
+        }
+
         // Check if position is on a valid ground tile
         if (this.spawnConfig.spawnOnGroundOnly) {
+            const groundLayer = this.scene.map.getLayer('Ground').tilemapLayer;
             const tile = groundLayer.getTileAtWorldXY(worldX, worldY);
             if (!tile || tile.index === -1) {
                 return false;
@@ -180,6 +180,7 @@ export default class NpcManager {
         }
 
         // Check if position is not on a wall
+        const wallsLayer = this.scene.map.getLayer('Walls').tilemapLayer;
         const wallTile = wallsLayer.getTileAtWorldXY(worldX, worldY);
         if (wallTile && wallTile.index !== -1) {
             return false;
@@ -197,8 +198,13 @@ export default class NpcManager {
     }
 
     getRandomNPCType() {
+        if (!this.npcTypes || Object.keys(this.npcTypes).length === 0) {
+            console.error('NpcManager: No NPC types available');
+            return 'GUARD'; // Default fallback
+        }
+
         const types = Object.keys(this.npcTypes);
-        const weights = types.map(type => this.npcTypes[type].spawnWeight);
+        const weights = types.map(type => this.npcTypes[type].spawnWeight || 1);
         const totalWeight = weights.reduce((a, b) => a + b, 0);
         
         let random = Math.random() * totalWeight;
@@ -213,6 +219,11 @@ export default class NpcManager {
     }
 
     getRandomBehavior(npcType) {
+        if (!this.npcTypes || !this.npcTypes[npcType]) {
+            console.error(`NpcManager: Invalid NPC type: ${npcType}`);
+            return 'stationary'; // Default fallback
+        }
+
         const npcConfig = this.npcTypes[npcType];
         const behaviors = ['patrol', 'wander', 'stationary'];
         
@@ -241,6 +252,62 @@ export default class NpcManager {
         });
     }
 
+    spawnFixedNPC(spawnData) {
+        const { id, type, x, y, behavior } = spawnData;
+        console.log(`NpcManager: Creating fixed NPC ${id} of type ${type} at (${x}, ${y})`);
+        
+        const npcConfig = this.npcTypes[type];
+        if (!npcConfig) {
+            console.error(`NpcManager: Unknown NPC type: ${type}`);
+            return null;
+        }
+
+        const npc = this.scene.add.rectangle(
+            x,
+            y,
+            npcConfig.size.width,
+            npcConfig.size.height,
+            npcConfig.color
+        );
+
+        // Make NPCs more visible
+        npc.setStrokeStyle(2, 0xffffff);
+        npc.setDepth(1);
+        npc.setAlpha(1);
+        npc.setOrigin(0.5); // Center the rectangle
+
+        this.scene.physics.add.existing(npc);
+        npc.body.setCollideWorldBounds(true);
+        npc.body.setBounce(0.1);
+        npc.body.setDamping(true);
+        npc.body.setDrag(0.95);
+
+        // Add unique properties to the NPC with FIXED ID
+        npc.npcData = {
+            id: id, // Use the fixed ID from spawn data
+            type: type,
+            health: npcConfig.health,
+            level: npcConfig.level,
+            behavior: behavior,
+            triggerRadius: npcConfig.triggerRadius,
+            patrolRadius: npcConfig.patrolRadius,
+            originalX: x,
+            originalY: y,
+            lastMoveTime: 0,
+            moveDirection: 1,
+            color: npcConfig.color
+        };
+
+        // Add trigger zone visualization
+        const triggerZone = this.scene.add.circle(x, y, npcConfig.triggerRadius, 0x00ff00, 0.2);
+        triggerZone.setDepth(0);
+        npc.triggerZone = triggerZone;
+
+        console.log(`NpcManager: Fixed NPC created successfully - ID: ${id}, Type: ${type}, Position: (${x}, ${y})`);
+        return npc;
+    }
+    
+    // Legacy method kept for backward compatibility (but not used in fixed spawn system)
     spawnNPC(x, y, type, behavior) {
         console.log(`NpcManager: Creating NPC of type ${type} at (${x.toFixed(0)}, ${y.toFixed(0)})`);
         
@@ -272,7 +339,7 @@ export default class NpcManager {
 
         // Add unique properties to the NPC
         npc.npcData = {
-            id: `npc_${this.npcs.length}`,
+            id: `npc_random_${Date.now()}_${Math.random()}`,
             type: type,
             health: npcConfig.health,
             level: npcConfig.level,
@@ -291,8 +358,8 @@ export default class NpcManager {
         triggerZone.setDepth(0);
         npc.triggerZone = triggerZone;
 
-        this.npcs.push(npc);
         console.log(`NpcManager: NPC created successfully - ID: ${npc.npcData.id}, Type: ${type}, Position: (${x.toFixed(0)}, ${y.toFixed(0)})`);
+        return npc;
     }
 
     update() {
@@ -348,10 +415,11 @@ export default class NpcManager {
             return;
         }
 
-        // console.log('[NpcManager] Checking interactions with player at:', {
-        //     x: player.x,
-        //     y: player.y
-        // });
+        // Check battle cooldown
+        const currentTime = this.scene.time.now;
+        if (currentTime - this.lastBattleTime < this.battleCooldownTime) {
+            return;
+        }
 
         // Find all NPCs that are connected through overlapping trigger radii
         const connectedNPCs = this.findConnectedNPCs(player);
@@ -400,9 +468,9 @@ export default class NpcManager {
                         connectedNPCs.add(otherNPC);
                         queue.push(otherNPC);
                     }
-                }
-            });
-        }
+            }
+        });
+    }
 
         return Array.from(connectedNPCs);
     }
@@ -416,6 +484,9 @@ export default class NpcManager {
             return;
         }
 
+        // Set battle cooldown
+        this.lastBattleTime = this.scene.time.now;
+        
         console.log(`[NpcManager] Starting battle with ${availableNPCs.length} NPCs:`, 
             availableNPCs.map(npc => `${npc.npcData.type} (ID: ${npc.npcData.id})`));
         
@@ -444,10 +515,27 @@ export default class NpcManager {
     }
 
     handleBattleEnd() {
+        console.log('[NpcManager] Handling battle end - setting cooldown');
+        
+        // Set the flag to prevent immediate battle trigger
         this.isReturningFromBattle = true;
+        
+        // Reset the battle cooldown timer to NOW (when battle ended)
+        // This ensures the full cooldown period applies from battle end, not start
+        this.lastBattleTime = this.scene.time.now;
+        
+        // Remove the flag after a short delay to allow player to move away
         this.scene.time.delayedCall(1000, () => {
             this.isReturningFromBattle = false;
+            console.log('[NpcManager] Battle return flag cleared');
         });
+    }
+    
+    resetNpcs() {
+        console.log('[NpcManager] Resetting NPCs after escape');
+        // This is called when player escapes from battle
+        // Just need to handle the battle end cooldown
+        this.handleBattleEnd();
     }
 
     spawnRandomNPC() {
@@ -471,14 +559,18 @@ export default class NpcManager {
 
     // Add method to remove defeated NPCs
     removeDefeatedNpcs(defeatedNpcIds) {
-        console.log('Removing defeated NPCs:', defeatedNpcIds);
+        console.log('[NpcManager] Removing defeated NPCs:', defeatedNpcIds);
+        
+        // Add new defeated NPCs to the set
+        defeatedNpcIds.forEach(id => this.defeatedNpcIds.add(id));
+        console.log('[NpcManager] Updated defeated NPCs set:', Array.from(this.defeatedNpcIds));
         
         defeatedNpcIds.forEach(id => {
             const npcIndex = this.npcs.findIndex(npc => npc.npcData.id === id);
             if (npcIndex !== -1) {
                 const npc = this.npcs[npcIndex];
                 
-                // Remove trigger zone
+                // Remove trigger zone if it exists
                 if (npc.triggerZone) {
                     npc.triggerZone.destroy();
                 }
@@ -492,8 +584,91 @@ export default class NpcManager {
                 // Remove from cooldowns
                 this.cooldowns.delete(id);
                 
-                console.log(`Removed NPC with ID: ${id}`);
+                console.log(`[NpcManager] Removed NPC with ID: ${id}`);
             }
         });
+        
+        console.log(`[NpcManager] Remaining NPCs: ${this.npcs.length}`);
+    }
+
+    markNpcAsDefeated(npcId) {
+        console.log(`[NpcManager] Marking NPC ${npcId} as defeated`);
+        
+        // Add the NPC ID to the defeated set
+        this.defeatedNpcIds.add(npcId);
+        console.log('[NpcManager] Updated defeated NPCs:', Array.from(this.defeatedNpcIds));
+        
+        // Remove the NPC from the scene
+        const npc = this.npcs.find(n => n.npcData.id === npcId);
+        if (npc) {
+            // Remove trigger zone if it exists
+            if (npc.triggerZone) {
+                npc.triggerZone.destroy();
+            }
+            
+            // Destroy the NPC
+            npc.destroy();
+            
+            // Remove from array
+            this.npcs = this.npcs.filter(n => n.npcData.id !== npcId);
+            
+            // Remove from cooldowns
+            this.cooldowns.delete(npcId);
+            
+            console.log(`[NpcManager] Successfully removed NPC ${npcId} from scene`);
+        } else {
+            console.log(`[NpcManager] NPC ${npcId} not found in scene`);
+        }
+    }
+
+    getNpcData() {
+        return {
+            npcTypes: this.npcTypes,
+            spawnConfig: this.spawnConfig,
+            defeatedNpcIds: Array.from(this.defeatedNpcIds)
+        };
+    }
+
+    updateDefeatedNpcs(defeatedNpcIds) {
+        console.log('[NpcManager] Updating defeated NPCs:', defeatedNpcIds);
+        console.log('[NpcManager] Current NPCs in scene:', this.npcs.map(n => n.npcData.id));
+        
+        // Add new defeated NPCs to the set
+        defeatedNpcIds.forEach(id => this.defeatedNpcIds.add(id));
+        console.log('[NpcManager] Updated defeated NPCs set:', Array.from(this.defeatedNpcIds));
+        
+        // Remove defeated NPCs from the scene immediately
+        const npcsToRemove = this.npcs.filter(npc => {
+            const shouldRemove = defeatedNpcIds.includes(npc.npcData.id);
+            console.log(`[NpcManager] NPC ${npc.npcData.id}: shouldRemove = ${shouldRemove}`);
+            return shouldRemove;
+        });
+        
+        console.log(`[NpcManager] Found ${npcsToRemove.length} NPCs to remove:`, npcsToRemove.map(n => n.npcData.id));
+        
+        npcsToRemove.forEach(npc => {
+            console.log(`[NpcManager] Removing defeated NPC from scene: ${npc.npcData.id} at position (${npc.x}, ${npc.y})`);
+            
+            // Remove trigger zone if it exists
+            if (npc.triggerZone) {
+                console.log(`[NpcManager] Destroying trigger zone for ${npc.npcData.id}`);
+                npc.triggerZone.destroy();
+            }
+            
+            // Destroy the NPC sprite
+            console.log(`[NpcManager] Destroying sprite for ${npc.npcData.id}`);
+            npc.destroy();
+            
+            // Remove from cooldowns
+            this.cooldowns.delete(npc.npcData.id);
+        });
+        
+        // Update the NPCs array to exclude defeated NPCs
+        const beforeLength = this.npcs.length;
+        this.npcs = this.npcs.filter(npc => !defeatedNpcIds.includes(npc.npcData.id));
+        const afterLength = this.npcs.length;
+        
+        console.log(`[NpcManager] Removed ${npcsToRemove.length} defeated NPCs. NPCs array: ${beforeLength} -> ${afterLength}`);
+        console.log(`[NpcManager] Remaining NPC IDs:`, this.npcs.map(n => n.npcData.id));
     }
 }

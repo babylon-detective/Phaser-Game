@@ -1,0 +1,400 @@
+/* ===================================
+   HUD Manager Styles
+   DOM-based UI overlay for game
+   =================================== */
+
+/* Main HUD Container */
+.hud-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+    font-family: 'Arial', sans-serif;
+}
+
+/* HUD Panels */
+.hud-panel {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.75);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #ffffff;
+    font-size: 14px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+}
+
+/* Panel Positioning */
+.top-left {
+    top: 20px;
+    left: 20px;
+}
+
+.top-right {
+    top: 20px;
+    right: 20px;
+}
+
+.top-center {
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.bottom-left {
+    bottom: 20px;
+    left: 20px;
+}
+
+.bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+.bottom-center {
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* HUD Titles */
+.hud-title {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #ffd700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255, 215, 0, 0.3);
+    padding-bottom: 4px;
+}
+
+.battle-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ff4444;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(255, 68, 68, 0.8);
+}
+
+/* Stat Rows */
+.stat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+}
+
+.stat-row-small {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+    font-size: 12px;
+}
+
+.stat-label {
+    min-width: 40px;
+    color: #aaaaaa;
+    font-size: 13px;
+}
+
+.stat-label-small {
+    min-width: 30px;
+    color: #aaaaaa;
+    font-size: 11px;
+}
+
+.stat-value {
+    color: #ffffff;
+    font-weight: bold;
+}
+
+.stat-value-small {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+/* Health/Stat Bars */
+.stat-bar-container {
+    flex: 1;
+    height: 18px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+.stat-bar-container-small {
+    flex: 1;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.stat-bar {
+    height: 100%;
+    transition: width 0.3s ease-out;
+    position: relative;
+}
+
+.health-bar {
+    background: linear-gradient(90deg, #ff4444 0%, #ff6666 100%);
+    box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.2);
+}
+
+.health-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, transparent 100%);
+}
+
+/* Control Display */
+.control-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+    font-size: 13px;
+    color: #cccccc;
+}
+
+kbd {
+    background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
+    border: 1px solid #666666;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8);
+}
+
+/* Status Items */
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 6px 0;
+    gap: 12px;
+}
+
+.status-label {
+    color: #aaaaaa;
+    font-size: 13px;
+}
+
+.status-value {
+    color: #ffd700;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* Enemy List */
+#enemy-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.enemy-item {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 8px;
+    margin: 6px 0;
+}
+
+.enemy-name {
+    font-weight: bold;
+    color: #ff8888;
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+/* Messages */
+.hud-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid;
+    border-radius: 8px;
+    padding: 16px 32px;
+    font-size: 18px;
+    font-weight: bold;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: auto;
+    z-index: 2000;
+}
+
+.hud-message.show {
+    opacity: 1;
+}
+
+.message-info {
+    border-color: #4488ff;
+    color: #4488ff;
+}
+
+.message-success {
+    border-color: #44ff44;
+    color: #44ff44;
+}
+
+.message-warning {
+    border-color: #ffaa44;
+    color: #ffaa44;
+}
+
+.message-error {
+    border-color: #ff4444;
+    color: #ff4444;
+}
+
+/* Victory Overlay */
+.victory-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(255, 215, 0, 0.1) 0%, rgba(0, 0, 0, 0.8) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+    pointer-events: auto;
+    z-index: 3000;
+}
+
+.victory-overlay.show {
+    opacity: 1;
+}
+
+.victory-content {
+    text-align: center;
+    animation: victoryPulse 2s ease-in-out infinite;
+}
+
+.victory-title {
+    font-size: 72px;
+    font-weight: bold;
+    color: #ffd700;
+    text-transform: uppercase;
+    letter-spacing: 8px;
+    margin: 0;
+    text-shadow: 
+        0 0 20px rgba(255, 215, 0, 0.8),
+        0 0 40px rgba(255, 215, 0, 0.6),
+        0 0 60px rgba(255, 215, 0, 0.4),
+        0 4px 8px rgba(0, 0, 0, 0.8);
+}
+
+.victory-subtitle {
+    font-size: 24px;
+    color: #ffffff;
+    margin-top: 16px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes victoryPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .hud-panel {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+    
+    .hud-title {
+        font-size: 14px;
+    }
+    
+    .battle-title {
+        font-size: 18px;
+    }
+    
+    .victory-title {
+        font-size: 48px;
+    }
+}
+
+/* Scrollbar Styling */
+#enemy-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+#enemy-list::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 3px;
+}
+
+#enemy-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+#enemy-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+/* Fade Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.hud-panel {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Glow Effects for Important Elements */
+.status-value,
+.stat-value {
+    text-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+#npcs-defeated {
+    color: #44ff44;
+    text-shadow: 0 0 6px rgba(68, 255, 68, 0.5);
+}
+
+#npcs-remaining {
+    color: #ffaa44;
+    text-shadow: 0 0 6px rgba(255, 170, 68, 0.5);
+}
+

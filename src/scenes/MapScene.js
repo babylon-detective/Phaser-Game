@@ -3,6 +3,11 @@ import Phaser from "phaser";
 export default class MapScene extends Phaser.Scene {
     constructor() {
         super({ key: 'MapScene' });
+        this.player = null;
+        this.npcs = [];
+        this.isTransitioning = false;
+        this.transitionTimer = null;
+        this.playerBlinkTween = null;
         // Simple color palette for different tile types
         this.tilePalette = {
             'TX Sea': 0x0066cc,        // Blue
@@ -14,7 +19,11 @@ export default class MapScene extends Phaser.Scene {
     }
 
     init(data) {
-        console.log('[MapScene] Init with data:', data);
+        console.log('[MapScene] Initializing with data:', data);
+        this.returnPosition = data?.returnPosition || null;
+        this.npcState = data?.npcState || null;
+        this.isTransitioning = data?.isTransitioning || false;
+        this.transitionType = data?.transitionType || null;
         this.playerPosition = data.playerPosition;
         this.worldScene = this.scene.get('WorldScene');
     }
@@ -51,6 +60,11 @@ export default class MapScene extends Phaser.Scene {
             this.scene.resume('WorldScene');
             this.scene.stop();
         });
+
+        // If we're transitioning, start the transition sequence
+        if (this.isTransitioning) {
+            this.startTransitionSequence();
+        }
     }
 
     drawMainMap(tilemap) {
@@ -179,5 +193,247 @@ export default class MapScene extends Phaser.Scene {
             padding: { x: 10, y: 5 }
         });
         label.setOrigin(0.5, 0); // Center the text above the map
+    }
+
+    startTransitionSequence() {
+        console.log('[MapScene] Starting transition sequence');
+        this.isTransitioning = true;
+
+        // Create black screen for fade in
+        const blackScreen = this.add.graphics();
+        blackScreen.fillStyle(0x000000, 1);
+        blackScreen.fillRect(0, 0, this.cameras.main.width, this.cameras.main.height);
+
+        // Fade in animation
+        this.tweens.add({
+            targets: blackScreen,
+            alpha: 0,
+            duration: 500,
+            ease: 'Power2',
+            onComplete: () => {
+                blackScreen.destroy();
+                // Start blinking effect after fade in
+                this.startBlinkingEffect();
+            }
+        });
+    }
+
+    startBlinkingEffect() {
+        if (!this.player) {
+            console.error('[MapScene] No player found for blinking effect');
+            this.isTransitioning = false;
+            return;
+        }
+
+        // Create blinking effect
+        this.playerBlinkTween = this.tweens.add({
+            targets: this.player,
+            alpha: 0.5,
+            duration: 200,
+            yoyo: true,
+            repeat: 5,
+            onComplete: () => {
+                this.player.setAlpha(1);
+                this.isTransitioning = false;
+                this.playerBlinkTween = null;
+            }
+        });
+
+        // Set transition timer
+        this.transitionTimer = this.time.delayedCall(3000, () => {
+            console.log('[MapScene] Transition period ended');
+            this.isTransitioning = false;
+            if (this.playerBlinkTween) {
+                this.playerBlinkTween.stop();
+                this.player.setAlpha(1);
+                this.playerBlinkTween = null;
+            }
+        });
+    }
+
+    checkNpcInteraction() {
+        // Don't check for interactions during transition
+        if (this.isTransitioning) {
+            console.log('[MapScene] Skipping NPC interaction check during transition');
+            return;
+        }
+
+        if (!this.player || !this.npcs) return;
+
+        this.npcs.forEach(npc => {
+            if (!npc || !npc.active) return;
+
+            // Calculate distance between player and NPC
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x,
+                this.player.y,
+                npc.x,
+                npc.y
+            );
+
+            // Check if player is within trigger radius
+            if (distance <= npc.triggerRadius) {
+                console.log('[MapScene] Player entered NPC trigger zone:', {
+                    npcId: npc.id,
+                    distance: distance,
+                    triggerRadius: npc.triggerRadius
+                });
+
+                // Immediately start battle with this NPC
+                this.startBattle(npc);
+                return; // Exit the loop after finding first NPC in range
+            }
+        });
+    }
+
+    startBattle(npc) {
+        console.log('[MapScene] Starting battle with NPC:', npc.id);
+        
+        // Store current NPC state
+        const npcState = this.npcs.map(n => ({
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            type: n.type
+        }));
+
+        // Create black mask for transition
+        const mask = this.add.graphics();
+        mask.fillStyle(0x000000, 1);
+        mask.fillRect(0, 0, this.cameras.main.width, this.cameras.main.height);
+
+        // Get player position in screen coordinates
+        const playerScreenPos = this.cameras.main.getWorldPoint(this.player.x, this.player.y);
+
+        // Animate mask scaling down to player position
+        this.tweens.add({
+            targets: mask,
+            scaleX: 0.1,
+            scaleY: 0.1,
+            x: playerScreenPos.x,
+            y: playerScreenPos.y,
+            duration: 500,
+            ease: 'Power2',
+            onComplete: () => {
+                // Pause this scene
+                this.scene.pause();
+                
+                // Launch battle scene
+                this.scene.launch('BattleScene', {
+                    playerData: {
+                        x: this.player.x,
+                        y: this.player.y,
+                        health: 100
+                    },
+                    npcDataArray: [npc],
+                    npcState: npcState,
+                    transitionFrom: 'MapScene'
+                });
+            }
+        });
+    }
+
+    returnToWorld() {
+        console.log('[MapScene] Returning to world');
+        
+        // Store current NPC state
+        const npcState = this.npcs.map(npc => ({
+            id: npc.id,
+            x: npc.x,
+            y: npc.y,
+            type: npc.type
+        }));
+
+        // Stop this scene
+        this.scene.stop();
+        
+        // Resume WorldScene with NPC state
+        this.scene.resume('WorldScene', {
+            npcState: npcState,
+            returnPosition: this.player ? { x: this.player.x, y: this.player.y } : null
+        });
+    }
+
+    shutdown() {
+        console.log('[MapScene] Running shutdown');
+        
+        // Clean up tweens and timers
+        if (this.playerBlinkTween) {
+            this.playerBlinkTween.stop();
+            this.playerBlinkTween = null;
+        }
+        if (this.transitionTimer) {
+            this.transitionTimer.destroy();
+            this.transitionTimer = null;
+        }
+
+        // Remove all event listeners
+        this.input.keyboard.removeAllKeys(true);
+        this.input.keyboard.removeAllListeners();
+        
+        super.shutdown();
+    }
+
+    handleDefeatedNpcs(defeatedNpcIds) {
+        console.log('[MapScene] Handling defeated NPCs:', defeatedNpcIds);
+        
+        defeatedNpcIds.forEach(npcId => {
+            const npc = this.npcs.find(n => n.id === npcId);
+            if (npc) {
+                console.log(`[MapScene] Starting blink effect for NPC: ${npcId}`);
+                
+                // Create blink effect
+                this.tweens.add({
+                    targets: npc,
+                    alpha: 0,
+                    duration: 200,
+                    yoyo: true,
+                    repeat: 3,
+                    onComplete: () => {
+                        console.log(`[MapScene] Removing defeated NPC: ${npcId}`);
+                        npc.destroy();
+                        this.npcs = this.npcs.filter(n => n.id !== npcId);
+                    }
+                });
+            }
+        });
+    }
+
+    resume(sys, data) {
+        console.log('[MapScene] Resuming with data:', data);
+        
+        // Re-enable input system
+        this.input.keyboard.enabled = true;
+        this.input.mouse.enabled = true;
+        
+        if (data?.isTransitioning) {
+            console.log('[MapScene] Starting transition sequence');
+            this.startTransitionSequence();
+        }
+
+        if (data?.returnPosition && this.player) {
+            console.log('[MapScene] Setting player position to return position:', data.returnPosition);
+            this.player.setPosition(data.returnPosition.x, data.returnPosition.y);
+            this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+        }
+
+        // If we have battle victory data, process it
+        if (data?.battleVictory && data?.defeatedNpcIds) {
+            console.log('[MapScene] Processing battle victory, removing defeated NPCs:', data.defeatedNpcIds);
+            this.handleDefeatedNpcs(data.defeatedNpcIds);
+        }
+
+        // Reset transition state after a short delay
+        this.time.delayedCall(1000, () => {
+            this.isTransitioning = false;
+            console.log('[MapScene] Transition complete, scene is now active');
+        });
+    }
+
+    update() {
+        // Don't update during transition
+        if (this.isTransitioning) return;
+
+        // ... rest of update code ...
     }
 }

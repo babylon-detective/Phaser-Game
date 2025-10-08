@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import HUDManager from "../ui/HUDManager";
 
 export default class BattleScene extends Phaser.Scene {
     constructor() {
@@ -49,8 +50,10 @@ export default class BattleScene extends Phaser.Scene {
         this.canDash = true;
         this.enemyHealthTexts = []; // Array to store health display texts
         this.enemyLevelTexts = []; // Array to store level display texts
+        this.textDisplays = []; // Array to store all text displays for cleanup
         this.victoryText = null;
         this.isVictorySequence = false;
+        this.defeatedEnemyIds = []; // Track defeated enemy IDs during battle
     }
 
     init(data) {
@@ -97,6 +100,44 @@ export default class BattleScene extends Phaser.Scene {
             return;
         }
 
+        // Create black screen for fade in
+        const blackScreen = this.add.graphics();
+        blackScreen.fillStyle(0x000000, 1);
+        blackScreen.fillRect(0, 0, this.cameras.main.width, this.cameras.main.height);
+
+        // Fade in animation
+        this.tweens.add({
+            targets: blackScreen,
+            alpha: 0,
+            duration: 500,
+            ease: 'Power2',
+            onComplete: () => {
+                blackScreen.destroy();
+                this.setupBattle();
+            }
+        });
+    }
+
+    setupBattle() {
+        // Clean up any existing input listeners first
+        this.cleanupInput();
+        
+        // Initialize/reset all state variables to ensure clean battle start
+        this.isReturning = false;
+        this.isAttacking = false;
+        this.isSecondaryAttacking = false;
+        this.isCharging = false;
+        this.isDashing = false;
+        this.canDash = true;
+        this.canShootProjectile = true;
+        this.isKeyPressed = false;
+        this.projectileCount = 0;
+        this.chargeTime = 0;
+        this.chargeStartTime = 0;
+        this.isVictorySequence = false;
+        this.isBattleActive = true;
+        this.defeatedEnemyIds = []; // Reset defeated enemy tracking
+
         // Set up background color to ensure WorldScene is hidden
         this.cameras.main.setBackgroundColor('#000000');
         
@@ -113,10 +154,10 @@ export default class BattleScene extends Phaser.Scene {
             10,
             0x00ff00
         );
-        this.physics.add.existing(this.ground, true); // true makes it static by default
+        this.physics.add.existing(this.ground, true);
 
         // Create player
-        const playerX = this.cameras.main.width * 0.3; // Position player on the left side
+        const playerX = this.cameras.main.width * 0.3;
         this.player = this.add.rectangle(
             playerX,
             groundY - 150,
@@ -132,54 +173,8 @@ export default class BattleScene extends Phaser.Scene {
         // Add collision between player and ground
         this.physics.add.collider(this.player, this.ground);
 
-        // Clear any existing input listeners first
-        this.input.keyboard.removeAllKeys(true);
-        this.input.keyboard.removeAllListeners();
-
         // Initialize input keys
-        this.escapeKey = this.input.keyboard.addKey('ESC');
-        this.attackKey = this.input.keyboard.addKey('RIGHT_BRACKET');
-        this.secondaryAttackKey = this.input.keyboard.addKey('LEFT_BRACKET');
-        this.dashKey = this.input.keyboard.addKey('SHIFT');
-        this.wasdKeys = this.input.keyboard.addKeys({
-            up: 'W',
-            down: 'S',
-            left: 'A',
-            right: 'D'
-        });
-
-        // Add key press listeners with proper cleanup references
-        this.attackListener = (event) => {
-            if (event.key === ']') {
-                console.log('[BattleScene] Right bracket detected!');
-                this.attack();
-            }
-        };
-        this.input.keyboard.on('keydown', this.attackListener);
-
-        this.chargeStartListener = (event) => {
-            if (event.key === '[' && !this.isKeyPressed) {
-                this.isKeyPressed = true;
-                this.chargeStartTime = this.time.now;
-                console.log('[BattleScene] Left bracket pressed, starting timer');
-            }
-        };
-        this.input.keyboard.on('keydown', this.chargeStartListener);
-
-        this.chargeEndListener = (event) => {
-            if (event.key === '[' && this.isKeyPressed) {
-                this.isKeyPressed = false;
-                const pressDuration = this.time.now - this.chargeStartTime;
-                console.log('[BattleScene] Left bracket released, duration:', pressDuration);
-                
-                if (pressDuration < this.chargeThreshold) {
-                    this.secondaryAttack();
-                } else if (this.isCharging) {
-                    this.releaseCharge();
-                }
-            }
-        };
-        this.input.keyboard.on('keyup', this.chargeEndListener);
+        this.initializeInput();
 
         // Create enemies using npcDataArray
         const totalEnemies = this.npcDataArray.length;
@@ -269,6 +264,7 @@ export default class BattleScene extends Phaser.Scene {
             // Store references to the texts
             this.enemyHealthTexts.push(healthText);
             this.enemyLevelTexts.push(levelText);
+            this.textDisplays.push(healthText, levelText);
         });
 
         // Add collision between player and enemies
@@ -287,45 +283,158 @@ export default class BattleScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player);
         this.cameras.main.setBounds(0, 0, this.cameras.main.width, this.cameras.main.height);
 
-        // Battle UI
-        this.add.text(16, 16, 'Battle Scene', { fontSize: '32px', fill: '#fff' });
+        // Create HUD using DOM-based UI
+        this.hudManager = new HUDManager(this);
+        this.hudManager.create();
         
-        // Player stats
-        this.add.text(16, 60, `Player HP: ${this.playerData.health}`, { fontSize: '16px', fill: '#fff' });
-        this.add.text(16, 80, `Level: ${this.playerData.level}`, { fontSize: '16px', fill: '#fff' });
+        // Initialize HUD with player data
+        this.hudManager.updatePlayerHealth(this.playerData.health, this.playerData.health);
+        this.hudManager.updatePlayerLevel(this.playerData.level);
+        
+        // Initialize enemy list in HUD
+        this.updateEnemyHUD();
 
-        // Controls instruction text
-        this.add.text(
-            this.cameras.main.width / 2,
-            16,
-            'WASD to move, W to jump, ESC to escape, ] to attack, [ to secondary attack, SHIFT to dash',
-            { fontSize: '16px', fill: '#fff' }
-        ).setOrigin(0.5, 0);
-
-        // Return button (top right)
-        const returnButton = this.add.text(
-            this.cameras.main.width - 150, 
-            16, 
-            'Return to World', 
-            { fontSize: '16px', fill: '#fff' }
-        )
-        .setInteractive()
-        .on('pointerdown', () => {
-            this.returnToWorld();
+        // Set up scene event listeners for HUD management
+        this.events.on('shutdown', () => {
+            console.log('[BattleScene] Scene shutting down, destroying HUD');
+            if (this.hudManager) {
+                this.hudManager.destroy();
+                this.hudManager = null;
+            }
         });
+    }
+
+    initializeInput() {
+        console.log('[BattleScene] Initializing input controls');
+        
+        // Clear any existing input listeners
+        this.cleanupInput();
+
+        // Initialize keyboard controls
+        this.escapeKey = this.input.keyboard.addKey('ESC');
+        this.attackKey = this.input.keyboard.addKey('RIGHT_BRACKET');
+        this.secondaryAttackKey = this.input.keyboard.addKey('LEFT_BRACKET');
+        this.dashKey = this.input.keyboard.addKey('SHIFT');
+        this.wasdKeys = this.input.keyboard.addKeys({
+            up: 'W',
+            down: 'S',
+            left: 'A',
+            right: 'D'
+        });
+
+        // Add key press listeners
+        this.attackListener = (event) => {
+            if (event.key === ']') {
+                console.log('[BattleScene] Right bracket detected!');
+                this.attack();
+            }
+        };
+        this.input.keyboard.on('keydown', this.attackListener);
+
+        this.chargeStartListener = (event) => {
+            if (event.key === '[' && !this.isKeyPressed) {
+                this.isKeyPressed = true;
+                this.chargeStartTime = this.time.now;
+                console.log('[BattleScene] Left bracket pressed, starting timer');
+            }
+        };
+        this.input.keyboard.on('keydown', this.chargeStartListener);
+
+        this.chargeEndListener = (event) => {
+            if (event.key === '[' && this.isKeyPressed) {
+                this.isKeyPressed = false;
+                const pressDuration = this.time.now - this.chargeStartTime;
+                console.log('[BattleScene] Left bracket released, duration:', pressDuration);
+                
+                if (pressDuration < this.chargeThreshold) {
+                    this.secondaryAttack();
+                } else if (this.isCharging) {
+                    this.releaseCharge();
+                }
+            }
+        };
+        this.input.keyboard.on('keyup', this.chargeEndListener);
+
+        // Enable input
+        this.input.keyboard.enabled = true;
+        this.input.mouse.enabled = true;
+    }
+
+    cleanupInput() {
+        console.log('[BattleScene] Cleaning up input controls');
+        
+        // Remove all keyboard listeners
+        if (this.attackListener) {
+            this.input.keyboard.off('keydown', this.attackListener);
+            this.attackListener = null;
+        }
+        if (this.chargeStartListener) {
+            this.input.keyboard.off('keydown', this.chargeStartListener);
+            this.chargeStartListener = null;
+        }
+        if (this.chargeEndListener) {
+            this.input.keyboard.off('keyup', this.chargeEndListener);
+            this.chargeEndListener = null;
+        }
+
+        // Remove all keys
+        if (this.escapeKey) {
+            this.escapeKey.destroy();
+            this.escapeKey = null;
+        }
+        if (this.attackKey) {
+            this.attackKey.destroy();
+            this.attackKey = null;
+        }
+        if (this.secondaryAttackKey) {
+            this.secondaryAttackKey.destroy();
+            this.secondaryAttackKey = null;
+        }
+        if (this.dashKey) {
+            this.dashKey.destroy();
+            this.dashKey = null;
+        }
+        if (this.wasdKeys) {
+            Object.values(this.wasdKeys).forEach(key => {
+                if (key) key.destroy();
+            });
+            this.wasdKeys = null;
+        }
+
+        // Remove all keyboard listeners
+        this.input.keyboard.removeAllKeys(true);
+        this.input.keyboard.removeAllListeners();
     }
 
     returnToWorld() {
         if (this.isReturning) return;
         this.isReturning = true;
+
+        console.log('[BattleScene] Returning to world');
         
-        // Stop this scene completely
-        this.scene.stop('BattleScene');
-        
-        // Start WorldScene fresh
-        this.scene.start('WorldScene', { 
-            returnPosition: this.worldPosition,
-            resumeFromBattle: true
+        // Clean up all game objects and physics
+        this.cleanup();
+
+        // Create black screen for fade out
+        const blackScreen = this.add.graphics();
+        blackScreen.fillStyle(0x000000, 0);
+        blackScreen.fillRect(0, 0, this.cameras.main.width, this.cameras.main.height);
+
+        // Fade out animation
+        this.tweens.add({
+            targets: blackScreen,
+            alpha: 1,
+            duration: 500,
+            ease: 'Power2',
+            onComplete: () => {
+                // Resume WorldScene with transition state, THEN stop this scene
+                this.scene.resume('WorldScene', { 
+                    battleVictory: false,
+                    returnPosition: this.worldPosition,
+                    transitionType: 'escape'
+                });
+                this.scene.stop();
+            }
         });
     }
 
@@ -334,6 +443,7 @@ export default class BattleScene extends Phaser.Scene {
 
         // Check for escape key
         if (Phaser.Input.Keyboard.JustDown(this.escapeKey)) {
+            console.log('[BattleScene] ESC key pressed, returning to world');
             this.returnToWorld();
             return;
         }
@@ -371,12 +481,12 @@ export default class BattleScene extends Phaser.Scene {
 
         // Player movement with WASD (only if not dashing)
         if (!this.isDashing) {
-            if (this.wasdKeys.left.isDown) {
+        if (this.wasdKeys.left.isDown) {
                 this.player.body.setVelocityX(-300);
-            } else if (this.wasdKeys.right.isDown) {
+        } else if (this.wasdKeys.right.isDown) {
                 this.player.body.setVelocityX(300);
-            } else {
-                this.player.body.setVelocityX(0);
+        } else {
+            this.player.body.setVelocityX(0);
             }
         }
 
@@ -840,164 +950,98 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     updateEnemyDisplays() {
-        // Add null check at the start
-        if (!this.enemies || !this.enemyHealthTexts || !this.enemyLevelTexts) {
-            return;
-        }
+        // Now handled by HUD system
+        this.updateEnemyHUD();
+    }
 
-        this.enemies.forEach((enemy, index) => {
-            // Check if enemy and texts exist before updating
-            if (enemy && enemy.active && 
-                this.enemyHealthTexts[index] && this.enemyHealthTexts[index].active &&
-                this.enemyLevelTexts[index] && this.enemyLevelTexts[index].active) {
-                
-                const healthText = this.enemyHealthTexts[index];
-                const levelText = this.enemyLevelTexts[index];
-                
-                // Update health text position and content
-                healthText.setPosition(enemy.x, enemy.y - enemy.height/2 - 30);
-                healthText.setText(`HP: ${enemy.enemyData.health}/${enemy.enemyData.maxHealth}`);
-                
-                // Update health text color based on health percentage
-                const healthPercentage = enemy.enemyData.health / enemy.enemyData.maxHealth;
-                let healthColor = '#ff0000'; // Red
-                if (healthPercentage > 0.6) {
-                    healthColor = '#00ff00'; // Green
-                } else if (healthPercentage > 0.3) {
-                    healthColor = '#ffff00'; // Yellow
-                }
-                healthText.setColor(healthColor);
-
-                // Update level text position
-                levelText.setPosition(enemy.x, enemy.y - enemy.height/2 - 50);
-            }
-        });
+    /**
+     * Update enemy HUD display with current enemy data
+     */
+    updateEnemyHUD() {
+        if (!this.hudManager || !this.enemies) return;
+        
+        // Map enemy data for HUD display
+        const enemyData = this.enemies
+            .filter(enemy => enemy && enemy.active && enemy.enemyData)
+            .map(enemy => ({
+                type: enemy.enemyData.type || 'Enemy',
+                health: enemy.enemyData.health,
+                maxHealth: enemy.enemyData.maxHealth,
+                level: enemy.enemyData.level || 1
+            }));
+        
+        this.hudManager.updateEnemyList(enemyData);
     }
 
     cleanup() {
-        console.log('[BattleScene] Running cleanup');
+        console.log('[BattleScene] Cleaning up scene');
         
-        // Clear all game objects first
-        if (this.enemies) {
-            this.enemies.forEach(enemy => {
-                if (enemy && enemy.active) {
-                    enemy.destroy();
-                }
-            });
-            this.enemies = [];
+        // Destroy HUD
+        if (this.hudManager) {
+            this.hudManager.destroy();
+            this.hudManager = null;
         }
-
-        // Clear all text displays
-        if (this.enemyHealthTexts) {
-            this.enemyHealthTexts.forEach(text => {
-                if (text && text.active) {
-                    text.destroy();
-                }
-            });
-            this.enemyHealthTexts = [];
+        
+        // Destroy all enemies
+        this.enemies.forEach(enemy => {
+            if (enemy.healthText) enemy.healthText.destroy();
+            if (enemy.levelText) enemy.levelText.destroy();
+            if (enemy.sprite) enemy.sprite.destroy();
+        });
+        this.enemies = [];
+        
+        // Destroy all projectiles
+        if (this.projectiles && Array.isArray(this.projectiles)) {
+            this.projectiles.forEach(projectile => projectile.destroy());
         }
-
-        if (this.enemyLevelTexts) {
-            this.enemyLevelTexts.forEach(text => {
-                if (text && text.active) {
-                    text.destroy();
-                }
-            });
-            this.enemyLevelTexts = [];
+        this.projectiles = [];
+        
+        // Destroy all text displays
+        if (this.textDisplays && Array.isArray(this.textDisplays)) {
+            this.textDisplays.forEach(display => display.destroy());
         }
-
-        // Remove specific key listeners
-        if (this.attackListener) {
-            this.input.keyboard.off('keydown', this.attackListener);
-        }
-        if (this.chargeStartListener) {
-            this.input.keyboard.off('keydown', this.chargeStartListener);
-        }
-        if (this.chargeEndListener) {
-            this.input.keyboard.off('keyup', this.chargeEndListener);
-        }
-
-        // Remove all keys
-        if (this.escapeKey) {
-            this.escapeKey.destroy();
-        }
-        if (this.attackKey) {
-            this.attackKey.destroy();
-        }
-        if (this.secondaryAttackKey) {
-            this.secondaryAttackKey.destroy();
-        }
-        if (this.dashKey) {
-            this.dashKey.destroy();
-        }
-        if (this.wasdKeys) {
-            Object.values(this.wasdKeys).forEach(key => {
-                if (key) key.destroy();
-            });
-        }
-
-        // Reset input flags
-        this.isKeyPressed = false;
-        this.isCharging = false;
+        this.textDisplays = [];
+        
+        // Reset state variables
+        this.isBattleActive = false;
+        this.currentTurn = 'player';
+        this.selectedEnemy = null;
+        this.selectedAbility = null;
+        
+        // Reset input and action states
+        this.isReturning = false;
         this.isAttacking = false;
+        this.isSecondaryAttacking = false;
+        this.isCharging = false;
         this.isDashing = false;
         this.canDash = true;
         this.canShootProjectile = true;
-
-        // Existing cleanup code
-        if (this.input && !this.isReturning) {
-            this.input.keyboard.enabled = false;
-            this.input.mouse.enabled = false;
-        }
-
-        // Stop physics
-        if (this.physics && this.physics.world) {
-            this.physics.world.pause();
-        }
-
-        // Clean up all projectiles
-        this.projectiles.forEach(projectile => {
-            if (projectile && projectile.active) {
-                projectile.destroy();
-            }
-        });
-        this.projectiles = [];
-
-        // Clean up health and level texts
-        this.enemyHealthTexts.forEach(text => text.destroy());
-        this.enemyLevelTexts.forEach(text => text.destroy());
-        this.enemyHealthTexts = [];
-        this.enemyLevelTexts = [];
-
-        if (this.victoryText) {
-            this.victoryText.destroy();
-            this.victoryText = null;
-        }
-
-        // Reset all references
-        this.player = null;
-        this.enemies = [];
-        this.ground = null;
-        this.escapeKey = null;
-        this.wasdKeys = null;
-        this.attackKey = null;
-        this.secondaryAttackKey = null;
-        this.dashKey = null;
-        this.isReturning = false;
+        this.isKeyPressed = false;
         this.projectileCount = 0;
+        this.chargeTime = 0;
+        this.chargeStartTime = 0;
         this.isVictorySequence = false;
-
-        // Clear any ongoing timers or tweens
-        this.time.removeAllEvents();
+        this.defeatedEnemyIds = [];
+        
+        // Clear all tweens and timers
         this.tweens.killAll();
+        
+        // Clear all delayed calls/timers
+        if (this.time && this.time.removeAllEvents) {
+            this.time.removeAllEvents();
+        }
+        
+        console.log('[BattleScene] Cleanup complete');
     }
 
     shutdown() {
+        console.log('[BattleScene] Running shutdown');
+        this.cleanupInput();
         this.cleanup();
         
-        // Remove all keyboard listeners
-        this.input.keyboard.removeAllKeys(true);
-        this.input.keyboard.removeAllListeners();
+        // Disable input
+        this.input.keyboard.enabled = false;
+        this.input.mouse.enabled = false;
         
         // Call parent shutdown
         super.shutdown();
@@ -1005,6 +1049,13 @@ export default class BattleScene extends Phaser.Scene {
 
     handleEnemyDefeat(enemy) {
         console.log('[BattleScene] Handling enemy defeat:', enemy.enemyData.id);
+        
+        // IMPORTANT: Store the defeated enemy ID BEFORE removing the enemy
+        if (enemy.enemyData && enemy.enemyData.id) {
+            this.defeatedEnemyIds.push(enemy.enemyData.id);
+            console.log('[BattleScene] Stored defeated enemy ID:', enemy.enemyData.id);
+            console.log('[BattleScene] Total defeated in this battle:', this.defeatedEnemyIds);
+        }
         
         const index = this.enemies.indexOf(enemy);
         if (index !== -1) {
@@ -1036,67 +1087,75 @@ export default class BattleScene extends Phaser.Scene {
     showVictorySequence() {
         console.log('[BattleScene] Starting victory sequence');
         
-        if (this.isVictorySequence) {
-            console.log('[BattleScene] Victory sequence already in progress');
-            return;
-        }
+        // Disable input during victory sequence
+        this.input.enabled = false;
         
-        this.isVictorySequence = true;
-
-        // Disable all input during victory sequence
-        this.input.keyboard.enabled = false;
-
-        // Store defeated NPCs' IDs
-        const defeatedNpcIds = this.npcDataArray.map(npc => npc.id);
-        console.log('[BattleScene] Defeated NPC IDs:', defeatedNpcIds);
-
+        // Use the defeatedEnemyIds that were collected during battle
+        // (this.enemies array is empty by the time we get here)
+        console.log('[BattleScene] Defeated NPC IDs:', this.defeatedEnemyIds);
+        
         // Center camera on player
-        this.cameras.main.stopFollow();
-        this.cameras.main.pan(
-            this.player.x,
-            this.player.y,
-            1000,
-            'Power2'
-        );
-
+        this.cameras.main.centerOn(this.player.x, this.player.y);
+        
         // Create victory text
-        this.victoryText = this.add.text(
-            this.cameras.main.worldView.centerX,
-            this.cameras.main.worldView.centerY - 50,
+        const victoryText = this.add.text(
+            this.player.x,
+            this.player.y - 50,
             'VICTORY!',
             {
-                fontSize: '64px',
-                fontStyle: 'bold',
-                fill: '#ffff00',
+                fontSize: '48px',
+                fontFamily: 'Arial',
+                color: '#ffffff',
                 stroke: '#000000',
-                strokeThickness: 6,
-                shadow: { blur: 10, color: '#ff0000', fill: true }
+                strokeThickness: 6
             }
         ).setOrigin(0.5);
-
-        // Add scale animation to victory text
+        this.textDisplays.push(victoryText);
+        
+        // Animate victory text
         this.tweens.add({
-            targets: this.victoryText,
-            scaleX: [0, 1.2, 1],
-            scaleY: [0, 1.2, 1],
-            duration: 1000,
-            ease: 'Back.out'
-        });
-
-        // Return to world after delay
-        this.time.delayedCall(2000, () => {
-            console.log('[BattleScene] Victory sequence complete, returning to world');
-            
-            // Stop this scene completely
-            this.scene.stop('BattleScene');
-            
-            // Start WorldScene fresh with victory data
-            this.scene.start('WorldScene', { 
-                returnPosition: this.worldPosition,
-                resumeFromBattle: true,
-                battleVictory: true,
-                defeatedNpcIds: defeatedNpcIds
-            });
+            targets: victoryText,
+            y: victoryText.y - 100,
+            alpha: 0,
+            duration: 2000,
+            onComplete: () => {
+                victoryText.destroy();
+                
+                // Create black rectangle for fade out
+                const fadeRect = this.add.rectangle(
+                    0, 0,
+                    this.cameras.main.width,
+                    this.cameras.main.height,
+                    0x000000
+                ).setOrigin(0).setDepth(1000);
+                
+                // Fade to black
+                this.tweens.add({
+                    targets: fadeRect,
+                    alpha: 1,
+                    duration: 1000,
+                    onComplete: () => {
+                        // Prepare transition data
+                        const transitionData = {
+                            battleVictory: true,
+                            returnPosition: this.worldPosition,
+                            defeatedNpcIds: this.defeatedEnemyIds,
+                            transitionType: 'victory'
+                        };
+                        
+                        console.log('[BattleScene] ========== VICTORY TRANSITION ==========');
+                        console.log('[BattleScene] Defeated enemy IDs collected:', this.defeatedEnemyIds);
+                        console.log('[BattleScene] Transition data:', JSON.stringify(transitionData, null, 2));
+                        
+                        // Clean up the scene
+                        this.cleanup();
+                        
+                        // Resume WorldScene first (which was paused), THEN stop this scene
+                        this.scene.resume('WorldScene', transitionData);
+                        this.scene.stop();
+                    }
+                });
+            }
         });
     }
 }
