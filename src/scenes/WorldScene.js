@@ -28,11 +28,17 @@ export default class WorldScene extends Phaser.Scene {
         this.battleVictory = data?.battleVictory || false;
         this.transitionType = data?.transitionType || null;
         
+        // Handle loaded game data
+        this.loadedGame = data?.loadedGame || false;
+        this.loadedPlayerPosition = data?.playerPosition || null;
+        
         console.log('[WorldScene] Initial state:', {
             returnPosition: this.returnPosition,
             battleVictory: this.battleVictory,
             transitionType: this.transitionType,
-            defeatedNpcIds: this.defeatedNpcIds
+            defeatedNpcIds: this.defeatedNpcIds,
+            loadedGame: this.loadedGame,
+            loadedPlayerPosition: this.loadedPlayerPosition
         });
     }
 
@@ -173,10 +179,16 @@ export default class WorldScene extends Phaser.Scene {
         
         // Initialize HUD with current game state from GameStateManager
         this.hudManager.updatePlayerStats();
-        this.hudManager.updateNPCCount(
-            this.defeatedNpcIds ? this.defeatedNpcIds.length : 0,
-            15 - (this.defeatedNpcIds ? this.defeatedNpcIds.length : 0)
-        );
+        
+        // Update NPC count based on current defeated NPCs
+        const defeatedCount = this.defeatedNpcIds ? this.defeatedNpcIds.length : 0;
+        const remainingCount = 15 - defeatedCount;
+        console.log('[WorldScene] Updating HUD NPC count:', { 
+            defeatedNpcIds: this.defeatedNpcIds,
+            defeatedCount, 
+            remainingCount 
+        });
+        this.hudManager.updateNPCCount(defeatedCount, remainingCount);
 
         // Set up camera to follow player AFTER player is created
         if (this.playerManager.player) {
@@ -205,7 +217,12 @@ export default class WorldScene extends Phaser.Scene {
         });
 
         // Position player and camera
-        if (this.returnPosition && this.playerManager.player) {
+        if (this.loadedGame && this.loadedPlayerPosition && this.playerManager.player) {
+            // Position player at loaded save point
+            console.log('Setting player position from loaded game:', this.loadedPlayerPosition);
+            this.playerManager.player.setPosition(this.loadedPlayerPosition.x, this.loadedPlayerPosition.y);
+            this.cameras.main.centerOn(this.loadedPlayerPosition.x, this.loadedPlayerPosition.y);
+        } else if (this.returnPosition && this.playerManager.player) {
             console.log('Setting player position to returnPosition:', this.returnPosition);
             this.playerManager.player.setPosition(this.returnPosition.x, this.returnPosition.y);
             this.cameras.main.centerOn(this.returnPosition.x, this.returnPosition.y);
@@ -216,6 +233,10 @@ export default class WorldScene extends Phaser.Scene {
 
         // Create charge gauge bar for Shift button
         this.createChargeGauge();
+
+        // Create save point with glowing effect
+        this.createSavePoint(300, 300); // Position at (300, 300) - adjust as needed
+        this.isOnSavePoint = false;
 
         function adjustCameraForDevice() {
             const width = window.innerWidth;
@@ -249,10 +270,19 @@ export default class WorldScene extends Phaser.Scene {
         const slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
         slashKey.on('down', () => {
             console.log('[WorldScene] / key pressed, opening menu');
+            console.log('[WorldScene] Player on save point:', this.isOnSavePoint);
             this.scene.pause();
             this.scene.launch('MenuScene', {
-                playerPosition: this.playerManager.getPlayerPosition()
+                playerPosition: this.playerManager.getPlayerPosition(),
+                isOnSavePoint: this.isOnSavePoint
             });
+        });
+
+        // Set up Return (Enter) key to FULLY pause the game
+        this.isPaused = false;
+        const returnKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+        returnKey.on('down', () => {
+            this.toggleGamePause();
         });
 
         // Add click debugging
@@ -420,6 +450,49 @@ export default class WorldScene extends Phaser.Scene {
         }
     }
 
+    createSavePoint(x, y) {
+        // Create elliptical glow effect for save point
+        const ellipseWidth = 80;
+        const ellipseHeight = 40;
+        
+        // Create graphics for the save point
+        this.savePointGlow = this.add.graphics();
+        this.savePointGlow.setDepth(0); // Below player
+        
+        // Store position
+        this.savePointPosition = { x, y };
+        
+        // Draw base ellipse (lighter inner glow)
+        this.savePointGlow.fillStyle(0x00ffff, 0.3);
+        this.savePointGlow.fillEllipse(x, y, ellipseWidth, ellipseHeight);
+        
+        // Draw middle glow
+        this.savePointGlow.fillStyle(0x00ffff, 0.2);
+        this.savePointGlow.fillEllipse(x, y, ellipseWidth + 20, ellipseHeight + 10);
+        
+        // Draw outer glow
+        this.savePointGlow.fillStyle(0x00ffff, 0.1);
+        this.savePointGlow.fillEllipse(x, y, ellipseWidth + 40, ellipseHeight + 20);
+        
+        // Add pulsing animation
+        this.tweens.add({
+            targets: this.savePointGlow,
+            alpha: 0.5,
+            duration: 1500,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut'
+        });
+        
+        // Create a physics zone for collision detection
+        this.savePointZone = this.add.zone(x, y, ellipseWidth, ellipseHeight);
+        this.physics.add.existing(this.savePointZone);
+        this.savePointZone.body.setAllowGravity(false);
+        this.savePointZone.body.moves = false;
+        
+        console.log('[WorldScene] Save point created at:', { x, y });
+    }
+
     update() {
         // Player update
         this.playerManager?.update();
@@ -435,6 +508,19 @@ export default class WorldScene extends Phaser.Scene {
         // Update charge gauge
         this.updateChargeGauge();
         
+        // Check if player is on save point
+        if (this.playerManager && this.playerManager.player && this.savePointZone) {
+            const distance = Phaser.Math.Distance.Between(
+                this.playerManager.player.x,
+                this.playerManager.player.y,
+                this.savePointPosition.x,
+                this.savePointPosition.y
+            );
+            
+            // Player is on save point if within 50 pixels
+            this.isOnSavePoint = distance < 50;
+        }
+        
         // Update HUD stats periodically (every second)
         if (!this.lastStatsUpdate) {
             this.lastStatsUpdate = 0;
@@ -443,6 +529,78 @@ export default class WorldScene extends Phaser.Scene {
         if (this.time.now - this.lastStatsUpdate >= 1000 && this.hudManager) {
             this.hudManager.updatePlayerStats();
             this.lastStatsUpdate = this.time.now;
+        }
+    }
+
+    toggleGamePause() {
+        this.isPaused = !this.isPaused;
+        
+        if (this.isPaused) {
+            console.log('[WorldScene] ⏸️ GAME FULLY PAUSED (Return key)');
+            
+            // Pause the game timer
+            gameStateManager.pauseTimer();
+            
+            // Pause the scene
+            this.scene.pause();
+            
+            // Create pause overlay
+            this.createPauseOverlay();
+            
+        } else {
+            console.log('[WorldScene] ▶️ GAME RESUMED (Return key)');
+            
+            // Resume the game timer
+            gameStateManager.resumeTimer();
+            
+            // Resume the scene
+            this.scene.resume();
+            
+            // Remove pause overlay
+            this.removePauseOverlay();
+        }
+    }
+    
+    createPauseOverlay() {
+        // Create DOM pause overlay
+        this.pauseOverlay = document.createElement('div');
+        this.pauseOverlay.id = 'game-pause-overlay';
+        this.pauseOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        this.pauseOverlay.innerHTML = `
+            <div style="text-align: center;">
+                <div style="font-size: 72px; font-weight: bold; color: #FFD700; margin-bottom: 20px;">
+                    ⏸️ PAUSED
+                </div>
+                <div style="font-size: 24px; color: #FFF; margin-bottom: 30px;">
+                    Game time and all activity paused
+                </div>
+                <div style="font-size: 18px; color: #AAA;">
+                    Press <span style="color: #FFD700; font-weight: bold;">ENTER</span> to resume
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(this.pauseOverlay);
+    }
+    
+    removePauseOverlay() {
+        if (this.pauseOverlay) {
+            this.pauseOverlay.remove();
+            this.pauseOverlay = null;
         }
     }
 

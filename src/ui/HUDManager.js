@@ -67,8 +67,9 @@ export default class HUDManager {
             <div class="hud-title">Controls</div>
             <div class="control-row"><kbd>WASD</kbd> Move</div>
             <div class="control-row"><kbd>Shift</kbd> Sprint (Hold & Release)</div>
-            <div class="control-row"><kbd>M</kbd> Map</div>
-            <div class="control-row"><kbd>/</kbd> Menu</div>
+            <div class="control-row"><kbd>M</kbd> Map (time continues)</div>
+            <div class="control-row"><kbd>/</kbd> Menu (time continues)</div>
+            <div class="control-row"><kbd>Enter</kbd> Pause Game</div>
         `;
 
         // Mini Status Display (top-right)
@@ -116,9 +117,10 @@ export default class HUDManager {
             <div id="enemy-list"></div>
         `;
 
-        // Battle Controls
-        this.elements.battleControlsPanel = this.createPanel('battle-controls-panel', 'bottom-center');
+        // Battle Controls (bottom-left to match WorldScene)
+        this.elements.battleControlsPanel = this.createPanel('battle-controls-panel', 'bottom-left');
         this.elements.battleControlsPanel.innerHTML = `
+            <div class="hud-title">Controls</div>
             <div class="control-row"><kbd>WASD</kbd> Move</div>
             <div class="control-row"><kbd>]</kbd> Attack</div>
             <div class="control-row"><kbd>[</kbd> Special (Hold to Charge)</div>

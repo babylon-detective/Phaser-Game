@@ -83,17 +83,17 @@ export default class GameStateManager {
      * Get current play time in milliseconds
      */
     getPlayTime() {
-        if (!this.gameStartTime) return 0;
+        if (!this.gameStartTime) return this.totalPlayTime;
         
         const currentTime = Date.now();
-        const elapsedTime = currentTime - this.gameStartTime;
+        const sessionTime = currentTime - this.gameStartTime;
         
         if (this.isPaused) {
             const pauseDuration = currentTime - this.pauseStartTime;
-            return elapsedTime - this.totalPlayTime - pauseDuration;
+            return this.totalPlayTime + sessionTime - pauseDuration;
         }
         
-        return elapsedTime - this.totalPlayTime;
+        return this.totalPlayTime + sessionTime;
     }
 
     /**
@@ -206,29 +206,52 @@ export default class GameStateManager {
 
     /**
      * Save game state to localStorage
+     * @param {Object} playerPosition - {x, y} coordinates of player
      */
-    saveGame() {
+    saveGame(playerPosition = null) {
+        console.log('[GameStateManager] ========== SAVING GAME ==========');
+        console.log('[GameStateManager] Player position to save:', playerPosition);
+        
         const gameState = {
             playTime: this.getPlayTime(),
             playerStats: this.playerStats,
             npcStats: this.npcStats,
             defeatedNpcIds: Array.from(this.defeatedNpcIds),
             battleHistory: this.battleHistory,
-            negotiationHistory: this.negotiationHistory
+            negotiationHistory: this.negotiationHistory,
+            playerPosition: playerPosition,
+            savedAt: new Date().toISOString()
         };
 
-        localStorage.setItem('gameState', JSON.stringify(gameState));
-        console.log('[GameStateManager] Game saved:', gameState);
-        return true;
+        try {
+            localStorage.setItem('gameState', JSON.stringify(gameState));
+            console.log('[GameStateManager] ✅ Game saved successfully:', gameState);
+            console.log('[GameStateManager] LocalStorage key "gameState" set');
+            
+            // Verify save
+            const verification = localStorage.getItem('gameState');
+            console.log('[GameStateManager] Verification - data exists in localStorage:', !!verification);
+            
+            return true;
+        } catch (e) {
+            console.error('[GameStateManager] ❌ Failed to save game:', e);
+            return false;
+        } finally {
+            console.log('[GameStateManager] =====================================');
+        }
     }
 
     /**
      * Load game state from localStorage
+     * @returns {Object|null} - Loaded game state with player position, or null if no save exists
      */
     loadGame() {
+        console.log('[GameStateManager] ========== LOADING GAME ==========');
         const savedState = localStorage.getItem('gameState');
+        
         if (savedState) {
             const gameState = JSON.parse(savedState);
+            console.log('[GameStateManager] Raw loaded data:', gameState);
             
             this.totalPlayTime = gameState.playTime || 0;
             this.playerStats = gameState.playerStats || this.playerStats;
@@ -237,10 +260,23 @@ export default class GameStateManager {
             this.battleHistory = gameState.battleHistory || [];
             this.negotiationHistory = gameState.negotiationHistory || [];
             
-            console.log('[GameStateManager] Game loaded:', gameState);
-            return true;
+            console.log('[GameStateManager] ✅ State restored:');
+            console.log('  - Play time:', this.totalPlayTime, 'ms');
+            console.log('  - Player stats:', this.playerStats);
+            console.log('  - Defeated NPCs:', Array.from(this.defeatedNpcIds));
+            console.log('  - Player position:', gameState.playerPosition);
+            console.log('[GameStateManager] =====================================');
+            
+            return {
+                success: true,
+                playerPosition: gameState.playerPosition || null,
+                defeatedNpcIds: Array.from(this.defeatedNpcIds)
+            };
         }
-        return false;
+        
+        console.log('[GameStateManager] ⚠️ No save data found');
+        console.log('[GameStateManager] =====================================');
+        return { success: false };
     }
 
     /**

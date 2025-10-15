@@ -6,20 +6,30 @@ export default class MenuScene extends Phaser.Scene {
         super({ key: 'MenuScene' });
         this.menuContainer = null;
         this.timerInterval = null;
+        this.selectedTabIndex = 0;
+        this.tabs = [];
     }
 
     init(data) {
         console.log('[MenuScene] Initializing with data:', data);
         this.playerPosition = data?.playerPosition || null;
+        this.isOnSavePoint = data?.isOnSavePoint || false;
         this.worldScene = this.scene.get('WorldScene');
+        console.log('[MenuScene] Player on save point:', this.isOnSavePoint);
+        
+        // Define tabs based on save point status
+        this.tabs = ['Player Stats'];
+        if (this.isOnSavePoint) {
+            this.tabs.push('Save Game');
+        }
     }
 
     create() {
         console.log('[MenuScene] Creating menu scene');
 
-        // Pause the game timer
-        gameStateManager.pauseTimer();
-
+        // Note: Game timer continues running in MenuScene
+        // Only WorldScene is paused (NPCs, player movement)
+        
         // Create dark overlay
         this.createOverlay();
 
@@ -29,6 +39,23 @@ export default class MenuScene extends Phaser.Scene {
         // Create DOM UI
         this.createMenuUI();
 
+        // Set up keyboard controls
+        this.wasdKeys = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+        
+        // Add ] key for selection/activation (using keyCode 221)
+        this.actionKey = this.input.keyboard.addKey(221); // ] key (CLOSE_BRACKET)
+        console.log('[MenuScene] Action key set up:', this.actionKey);
+        
+        // Add general keydown listener for debugging
+        this.input.keyboard.on('keydown', (event) => {
+            console.log('[MenuScene] Key pressed - code:', event.keyCode, 'key:', event.key);
+        });
+        
         // Add / and ESC key handlers to close menu
         const slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
         slashKey.on('down', () => {
@@ -44,6 +71,30 @@ export default class MenuScene extends Phaser.Scene {
 
         // Start timer update interval
         this.startTimerUpdate();
+    }
+    
+    update() {
+        // Handle tab navigation with WASD
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.up)) {
+            console.log('[MenuScene] Navigating to previous tab');
+            this.selectedTabIndex = (this.selectedTabIndex - 1 + this.tabs.length) % this.tabs.length;
+            console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
+            this.updateTabSelection();
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.down)) {
+            console.log('[MenuScene] Navigating to next tab');
+            this.selectedTabIndex = (this.selectedTabIndex + 1) % this.tabs.length;
+            console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
+            this.updateTabSelection();
+        }
+        
+        // Handle tab activation with ] key
+        if (Phaser.Input.Keyboard.JustDown(this.actionKey)) {
+            console.log('[MenuScene] ] key pressed!');
+            console.log('[MenuScene] Current tab:', this.tabs[this.selectedTabIndex]);
+            this.activateCurrentTab();
+        }
     }
 
     createOverlay() {
@@ -150,33 +201,128 @@ export default class MenuScene extends Phaser.Scene {
         `;
         this.menuContainer.appendChild(this.timerElement);
 
-        // Create player stats panel (left column)
-        this.statsPanel = document.createElement('div');
-        this.statsPanel.id = 'player-stats-panel';
-        this.statsPanel.style.cssText = `
+        // Create tab container (left side)
+        this.tabContainer = document.createElement('div');
+        this.tabContainer.id = 'menu-tabs-container';
+        this.tabContainer.style.cssText = `
             position: absolute;
             top: 20px;
             left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        `;
+        this.menuContainer.appendChild(this.tabContainer);
+
+        // Create tab buttons
+        this.createTabButtons();
+        
+        // Create content panel for selected tab
+        this.contentPanel = document.createElement('div');
+        this.contentPanel.id = 'tab-content-panel';
+        this.contentPanel.style.cssText = `
+            position: absolute;
+            top: 20px;
+            left: 280px;
             background: rgba(0, 0, 0, 0.9);
             color: #FFF;
             padding: 20px;
             border: 2px solid #4A90E2;
             border-radius: 10px;
-            min-width: 250px;
+            min-width: 300px;
+            max-width: 400px;
             box-shadow: 0 0 20px rgba(74, 144, 226, 0.5);
         `;
-        
-        this.updateStatsPanel();
-        this.menuContainer.appendChild(this.statsPanel);
+        this.menuContainer.appendChild(this.contentPanel);
+
+        // Create control hints at bottom
+        this.controlsHint = document.createElement('div');
+        this.controlsHint.style.cssText = `
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #AAA;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+        `;
+        this.controlsHint.innerHTML = `
+            <span style="color: #FFD700;">WASD</span> Navigate • 
+            <span style="color: #FFD700;">]</span> Select • 
+            <span style="color: #FFD700;">/</span> or <span style="color: #FFD700;">ESC</span> Close
+        `;
+        this.menuContainer.appendChild(this.controlsHint);
+
+        // Update content for first tab
+        this.updateTabSelection();
 
         console.log('[MenuScene] Menu UI created');
     }
+    
+    createTabButtons() {
+        this.tabs.forEach((tabName, index) => {
+            const tabButton = document.createElement('div');
+            tabButton.id = `tab-button-${index}`;
+            tabButton.className = 'menu-tab-button';
+            tabButton.style.cssText = `
+                background: rgba(0, 0, 0, 0.8);
+                color: #FFF;
+                padding: 15px 20px;
+                border: 2px solid ${index === this.selectedTabIndex ? '#FFD700' : '#4A90E2'};
+                border-radius: 8px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+                pointer-events: auto;
+                transition: all 0.3s;
+                box-shadow: ${index === this.selectedTabIndex ? '0 0 20px rgba(255, 215, 0, 0.6)' : '0 0 10px rgba(74, 144, 226, 0.3)'};
+                min-width: 220px;
+                text-align: center;
+            `;
+            
+            // Add visual indicator for selected tab
+            tabButton.innerHTML = `
+                ${index === this.selectedTabIndex ? '> ' : ''}${tabName}${index === this.selectedTabIndex ? ' <' : ''}
+            `;
+            
+            this.tabContainer.appendChild(tabButton);
+        });
+    }
 
-    updateStatsPanel() {
+    updateTabSelection() {
+        // Update tab button styles
+        this.tabs.forEach((tabName, index) => {
+            const tabButton = document.getElementById(`tab-button-${index}`);
+            if (tabButton) {
+                const isSelected = index === this.selectedTabIndex;
+                tabButton.style.border = `2px solid ${isSelected ? '#FFD700' : '#4A90E2'}`;
+                tabButton.style.boxShadow = isSelected ? '0 0 20px rgba(255, 215, 0, 0.6)' : '0 0 10px rgba(74, 144, 226, 0.3)';
+                tabButton.innerHTML = `${isSelected ? '> ' : ''}${tabName}${isSelected ? ' <' : ''}`;
+            }
+        });
+        
+        // Update content panel based on selected tab
+        this.updateTabContent();
+    }
+    
+    updateTabContent() {
+        const currentTab = this.tabs[this.selectedTabIndex];
+        
+        if (currentTab === 'Player Stats') {
+            this.showPlayerStatsContent();
+        } else if (currentTab === 'Save Game') {
+            this.showSaveGameContent();
+        }
+    }
+    
+    showPlayerStatsContent() {
         const playerStats = gameStateManager.getPlayerStats();
         const xpPercent = (playerStats.experience / playerStats.experienceToNextLevel) * 100;
         
-        this.statsPanel.innerHTML = `
+        this.contentPanel.innerHTML = `
             <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #4A90E2; border-bottom: 2px solid #4A90E2; padding-bottom: 10px;">
                 PLAYER STATS
             </div>
@@ -212,11 +358,83 @@ export default class MenuScene extends Phaser.Scene {
                 <span style="color: #AAA;">Speed:</span>
                 <span style="color: #00D9FF; font-weight: bold;">${playerStats.speed}</span>
             </div>
-
-            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #444; font-size: 12px; color: #888; text-align: center;">
-                Press <span style="color: #FFD700;">/</span> or <span style="color: #FFD700;">ESC</span> to close
-            </div>
         `;
+    }
+    
+    showSaveGameContent() {
+        this.contentPanel.innerHTML = `
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #00FFFF; border-bottom: 2px solid #00FFFF; padding-bottom: 10px;">
+                SAVE GAME
+            </div>
+            
+            <div style="margin-bottom: 20px; color: #AAA; line-height: 1.6;">
+                <p style="margin-bottom: 12px;">You are standing on a <span style="color: #00FFFF;">Save Point</span>.</p>
+                <p style="margin-bottom: 12px;">Your current position and progress will be saved.</p>
+                <p style="color: #FFD700;">Press <span style="font-weight: bold; font-size: 16px;">]</span> to save your game.</p>
+            </div>
+            
+            <div style="padding: 15px; background: rgba(0, 255, 255, 0.1); border: 1px solid #00FFFF; border-radius: 8px; margin-bottom: 15px;">
+                <div style="font-size: 14px; font-weight: bold; color: #00FFFF; margin-bottom: 8px;">Current Location:</div>
+                <div style="font-size: 12px; color: #AAA;">
+                    X: ${Math.floor(this.playerPosition?.x || 0)}<br>
+                    Y: ${Math.floor(this.playerPosition?.y || 0)}
+                </div>
+            </div>
+            
+            <div id="save-status" style="text-align: center; margin-top: 15px; font-size: 14px; color: #00ffff; min-height: 20px; font-weight: bold;"></div>
+        `;
+    }
+    
+    activateCurrentTab() {
+        const currentTab = this.tabs[this.selectedTabIndex];
+        console.log('[MenuScene] Activating tab:', currentTab);
+        
+        if (currentTab === 'Save Game') {
+            this.handleSaveGame();
+        }
+        // Player Stats tab has no action
+    }
+
+    handleSaveGame() {
+        console.log('[MenuScene] ========== SAVING GAME ==========');
+        console.log('[MenuScene] Player position:', this.playerPosition);
+        console.log('[MenuScene] Is on save point:', this.isOnSavePoint);
+        
+        const statusElement = document.getElementById('save-status');
+        
+        // Save game with current player position
+        const saved = gameStateManager.saveGame(this.playerPosition);
+        
+        console.log('[MenuScene] Save result:', saved);
+        
+        // Check localStorage to verify save
+        const savedData = localStorage.getItem('gameState');
+        console.log('[MenuScene] LocalStorage data:', savedData);
+        if (savedData) {
+            console.log('[MenuScene] Parsed save data:', JSON.parse(savedData));
+        }
+        
+        if (saved) {
+            console.log('[MenuScene] ✅ Game saved successfully to localStorage');
+            if (statusElement) {
+                statusElement.textContent = '✓ Game Saved!';
+                statusElement.style.color = '#00ff00';
+                
+                // Clear status after 3 seconds
+                setTimeout(() => {
+                    if (statusElement) {
+                        statusElement.textContent = '';
+                    }
+                }, 3000);
+            }
+        } else {
+            console.error('[MenuScene] ❌ Failed to save game');
+            if (statusElement) {
+                statusElement.textContent = '✗ Save Failed';
+                statusElement.style.color = '#ff0000';
+            }
+        }
+        console.log('[MenuScene] =====================================');
     }
 
     startTimerUpdate() {
@@ -227,8 +445,8 @@ export default class MenuScene extends Phaser.Scene {
                 timerValue.textContent = gameStateManager.getFormattedPlayTime();
             }
             
-            // Also update stats periodically to reflect any changes
-            this.updateStatsPanel();
+            // Also update tab content periodically to reflect any changes
+            this.updateTabContent();
         }, 100); // Update 10 times per second for smooth display
     }
 
@@ -239,8 +457,7 @@ export default class MenuScene extends Phaser.Scene {
             this.timerInterval = null;
         }
 
-        // Resume game timer
-        gameStateManager.resumeTimer();
+        // Note: Game timer was never paused, so no need to resume it
 
         // Show the actual player sprite in WorldScene again
         if (this.worldScene && this.worldScene.playerManager && this.worldScene.playerManager.player) {
@@ -309,8 +526,7 @@ export default class MenuScene extends Phaser.Scene {
         this.input.keyboard.removeAllKeys(true);
         this.input.keyboard.removeAllListeners();
 
-        // Resume game timer if it was paused
-        gameStateManager.resumeTimer();
+        // Note: Game timer was never paused, so no need to resume it
 
         super.shutdown();
     }

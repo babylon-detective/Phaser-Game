@@ -19,12 +19,22 @@ export default class StartScene extends Phaser.Scene {
         // Initialize text objects before calling resizeGame
         this.titleText = this.add.text(this.scale.width / 2, this.scale.height / 4, 'NAGEEX', { fontSize: '262px', fill: '#fff' }).setOrigin(0.5, 0.5);
         
+        // Check if save exists
+        const hasSave = localStorage.getItem('gameState') !== null;
+        console.log('[StartScene] Save exists:', hasSave);
+        
         // Create menu items with bullet points
         const menuY = this.scale.height / 2;
         this.menuItems = [
             this.add.text(this.scale.width / 2, menuY, '• Start', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5),
-            this.add.text(this.scale.width / 2, menuY + 50, '• Continue', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5, 0.5)
+            this.add.text(this.scale.width / 2, menuY + 50, '• Continue', { 
+                fontSize: '24px', 
+                fill: hasSave ? '#fff' : '#666'  // Gray out if no save
+            }).setOrigin(0.5, 0.5)
         ];
+        
+        // Store whether continue is enabled
+        this.continueEnabled = hasSave;
 
         // Set up keyboard controls
         this.wasdKeys = this.input.keyboard.addKeys({
@@ -35,7 +45,9 @@ export default class StartScene extends Phaser.Scene {
 
         // Set up click handlers
         this.menuItems[0].setInteractive().on('pointerdown', () => this.selectMenuItem(0));
-        this.menuItems[1].setInteractive().on('pointerdown', () => this.selectMenuItem(1));
+        if (hasSave) {
+            this.menuItems[1].setInteractive().on('pointerdown', () => this.selectMenuItem(1));
+        }
 
         // Highlight initial selection
         this.updateSelection();
@@ -68,11 +80,13 @@ export default class StartScene extends Phaser.Scene {
         // Update all menu items
         this.menuItems.forEach((item, index) => {
             const text = item.text;
+            const isDisabled = index === 1 && !this.continueEnabled;
+            
             if (index === this.selectedIndex) {
-                item.setStyle({ fill: '#ffff00' }); // Highlight selected item
+                item.setStyle({ fill: isDisabled ? '#666' : '#ffff00' }); // Highlight selected item (or gray if disabled)
                 item.setText('> ' + text.substring(2)); // Replace bullet with arrow
             } else {
-                item.setStyle({ fill: '#fff' });
+                item.setStyle({ fill: isDisabled ? '#666' : '#fff' });
                 item.setText('• ' + text.substring(2)); // Restore bullet
             }
         });
@@ -86,25 +100,49 @@ export default class StartScene extends Phaser.Scene {
             gameStateManager.startTimer(); // Start gameplay timer
             console.log('[StartScene] Starting new game, timer initialized');
             this.scene.start('WorldScene');
-        } else if (index === 1) {
+        } else if (index === 1 && this.continueEnabled) {
             // Continue game
-            const gameState = SaveState.load();
-            const loaded = gameStateManager.loadGame(); // Load saved game state
-            if (loaded) {
-                gameStateManager.startTimer(); // Resume timer
-                console.log('[StartScene] Continuing game, timer resumed');
-            } else {
-                // No save found, start new game
-                gameStateManager.resetGame();
-                gameStateManager.startTimer();
-                console.log('[StartScene] No save found, starting new game');
+            console.log('[StartScene] ========== CONTINUE GAME ==========');
+            
+            // Check localStorage first
+            const savedData = localStorage.getItem('gameState');
+            console.log('[StartScene] LocalStorage data exists:', !!savedData);
+            if (savedData) {
+                console.log('[StartScene] Raw localStorage data:', savedData);
+                try {
+                    const parsed = JSON.parse(savedData);
+                    console.log('[StartScene] Parsed save data:', parsed);
+                } catch (e) {
+                    console.error('[StartScene] Failed to parse save data:', e);
+                }
             }
             
-            if (gameState) {
-                this.scene.start(gameState.scene, gameState.data);
+            const loadResult = gameStateManager.loadGame(); // Load saved game state
+            console.log('[StartScene] Load result:', loadResult);
+            
+            if (loadResult.success) {
+                gameStateManager.startTimer(); // Resume timer
+                console.log('[StartScene] ✅ Continuing game, timer resumed');
+                console.log('[StartScene] Loaded player position:', loadResult.playerPosition);
+                console.log('[StartScene] Defeated NPCs:', loadResult.defeatedNpcIds);
+                
+                // Start WorldScene with loaded data
+                this.scene.start('WorldScene', {
+                    loadedGame: true,
+                    playerPosition: loadResult.playerPosition,
+                    defeatedNpcIds: loadResult.defeatedNpcIds
+                });
             } else {
+                // No save found, start new game
+                console.warn('[StartScene] ⚠️ No save found, starting new game');
+                gameStateManager.resetGame();
+                gameStateManager.startTimer();
                 this.scene.start('WorldScene');
             }
+            console.log('[StartScene] =====================================');
+        } else if (index === 1 && !this.continueEnabled) {
+            // Continue is disabled - no save found
+            console.log('[StartScene] ⚠️ Continue is disabled - no save file found');
         }
     }
 
