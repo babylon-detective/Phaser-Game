@@ -83,12 +83,6 @@ export default class HUDManager {
      * Create HUD elements for BattleScene
      */
     createBattleHUD() {
-        // Battle Title
-        this.elements.titlePanel = this.createPanel('battle-title-panel', 'top-center');
-        this.elements.titlePanel.innerHTML = `
-            <div class="battle-title">Battle Scene</div>
-        `;
-
         // Player Stats (left side)
         this.elements.playerPanel = this.createPanel('player-panel', 'top-left');
         this.elements.playerPanel.innerHTML = `

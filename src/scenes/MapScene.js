@@ -26,6 +26,9 @@ export default class MapScene extends Phaser.Scene {
         this.transitionType = data?.transitionType || null;
         this.playerPosition = data.playerPosition;
         this.worldScene = this.scene.get('WorldScene');
+        
+        // Get world bounds from WorldScene
+        this.worldBounds = this.worldScene.physics.world.bounds;
     }
 
     create() {
@@ -45,13 +48,18 @@ export default class MapScene extends Phaser.Scene {
             layers: tilemap.layers.map(l => l.name)
         });
 
+        // Set camera to view entire scene (no culling)
+        this.cameras.main.setScroll(0, 0);
+        this.cameras.main.setZoom(1);
+        this.cameras.main.setBounds(0, 0, this.cameras.main.width, this.cameras.main.height);
+
         // Add basic UI elements
         this.add.text(10, 10, 'Map Scene (Press M to close)', {
             fontSize: '16px',
             color: '#ffffff'
-        });
+        }).setScrollFactor(0); // Keep UI fixed
 
-        // Draw only one map
+        // Draw the entire minimap
         this.drawMinimap(tilemap);
 
         // Add M key handler
@@ -112,87 +120,220 @@ export default class MapScene extends Phaser.Scene {
     }
 
     drawMinimap(tilemap) {
-        // Minimap settings - significantly increased size
-        const tileSize = 8; // Increased from 1 to 8 pixels per tile
-        const minimapWidth = tilemap.width * tileSize;
-        const minimapHeight = tilemap.height * tileSize;
+        // Calculate viewport dimensions
+        const viewportWidth = this.cameras.main.width;
+        const viewportHeight = this.cameras.main.height;
+        
+        // Define padding around the map (reduced for more space)
+        const padding = 40;
+        const availableWidth = viewportWidth - (padding * 2);
+        const availableHeight = viewportHeight - (padding * 2);
+        
+        // Use world bounds for map dimensions
+        const worldWidth = this.worldBounds.width;
+        const worldHeight = this.worldBounds.height;
+        const worldX = this.worldBounds.x;
+        const worldY = this.worldBounds.y;
+        
+        // Calculate scale to fit ENTIRE world bounds in viewport
+        const scaleX = availableWidth / worldWidth;
+        const scaleY = availableHeight / worldHeight;
+        const scale = Math.min(scaleX, scaleY);
+        
+        // Calculate actual minimap dimensions based on world bounds
+        const minimapWidth = worldWidth * scale;
+        const minimapHeight = worldHeight * scale;
         
         // Center the map in the viewport
-        const minimapX = this.cameras.main.centerX - (minimapWidth / 2);
-        const minimapY = this.cameras.main.centerY - (minimapHeight / 2);
+        const minimapX = (viewportWidth - minimapWidth) / 2;
+        const minimapY = (viewportHeight - minimapHeight) / 2;
+        
+        // Calculate how to position tilemap within the world bounds
+        const tileSize = scale * tilemap.tileWidth;
+        const tilemapOffsetX = -worldX * scale;
+        const tilemapOffsetY = -worldY * scale;
+        
+        // Debug logging
+        console.log('[MapScene] ========== MINIMAP DEBUG ==========');
+        console.log('[MapScene] Viewport:', viewportWidth, 'x', viewportHeight);
+        console.log('[MapScene] World Bounds:', worldWidth, 'x', worldHeight, 'at (', worldX, ',', worldY, ')');
+        console.log('[MapScene] Tilemap:', tilemap.width, 'x', tilemap.height, 'tiles');
+        console.log('[MapScene] Total layers:', tilemap.layers.length);
+        console.log('[MapScene] Layer names:', tilemap.layers.map(l => l.name));
+        console.log('[MapScene] Scale:', scale);
+        console.log('[MapScene] Minimap dimensions:', minimapWidth, 'x', minimapHeight);
+        console.log('[MapScene] Minimap position: (', minimapX, ',', minimapY, ')');
+        console.log('[MapScene] =====================================');
 
         const minimapGraphics = this.add.graphics();
+        minimapGraphics.setScrollFactor(0); // Keep graphics fixed to camera
         
-        // Draw minimap background with larger border and glow effect
+        // Draw world bounds background with larger border and glow effect
         minimapGraphics.lineStyle(4, 0xffffff, 0.5); // Outer glow
         minimapGraphics.strokeRect(minimapX - 4, minimapY - 4, minimapWidth + 8, minimapHeight + 8);
         minimapGraphics.lineStyle(2, 0xffffff); // Inner border
         minimapGraphics.strokeRect(minimapX - 2, minimapY - 2, minimapWidth + 4, minimapHeight + 4);
-        minimapGraphics.fillStyle(0x000000, 0.7);
+        
+        // Fill world bounds area with dark background
+        minimapGraphics.fillStyle(0x000000, 0.9);
         minimapGraphics.fillRect(minimapX, minimapY, minimapWidth, minimapHeight);
+        
+        // Draw tilemap bounds indicator (lighter background to show actual game area)
+        const tilemapWidth = tilemap.width * tilemap.tileWidth * scale;
+        const tilemapHeight = tilemap.height * tilemap.tileHeight * scale;
+        minimapGraphics.fillStyle(0x1a1a1a, 0.7);
+        minimapGraphics.fillRect(
+            minimapX + tilemapOffsetX,
+            minimapY + tilemapOffsetY,
+            tilemapWidth,
+            tilemapHeight
+        );
+        
+        // Draw tilemap border
+        minimapGraphics.lineStyle(1, 0x00ff00, 0.5); // Green border for tilemap area
+        minimapGraphics.strokeRect(
+            minimapX + tilemapOffsetX,
+            minimapY + tilemapOffsetY,
+            tilemapWidth,
+            tilemapHeight
+        );
 
         // Draw minimap layers with enhanced visibility
+        // Tiles are positioned within world bounds coordinate system
+        let tilesDrawn = 0;
+        const tilesetCounts = {}; // Track tiles per tileset for debugging
+        
+        console.log('[MapScene] ========== DRAWING LAYERS ==========');
+        
         tilemap.layers.forEach((layer, index) => {
-            // Add slight transparency for layering effect
-            const alpha = 1 - (index * 0.1);
+            let layerTileCount = 0;
+            console.log('[MapScene] Processing layer:', layer.name, '(index:', index, ')');
+            
+            // Different alpha for different layer types
+            let alpha = 1.0;
+            if (layer.name === 'Sea' || layer.name === 'Ground') {
+                alpha = 1.0; // Full opacity for base terrain
+            } else if (layer.name === 'Walls') {
+                alpha = 0.7; // Semi-transparent walls
+            } else {
+                alpha = 0.5; // More transparent for props/plants
+            }
+            
             for (let y = 0; y < tilemap.height; y++) {
                 for (let x = 0; x < tilemap.width; x++) {
                     const tile = layer.data[y][x];
                     if (tile && tile.index !== -1) {
-                        const color = this.tilePalette[tile.tileset.name] || 0xcccccc;
+                        // Get tileset name
+                        const tilesetName = tile.tileset ? tile.tileset.name : 'unknown';
+                        tilesetCounts[tilesetName] = (tilesetCounts[tilesetName] || 0) + 1;
+                        
+                        // Match color by tileset name (using includes for partial matching)
+                        let color = 0x808080; // Default gray
+                        
+                        // Base terrain colors (most important)
+                        if (tilesetName.includes('Sea')) {
+                            color = 0x1E90FF; // Dodger blue for water (brighter blue)
+                        } else if (tilesetName.includes('Grass')) {
+                            color = 0x32CD32; // Lime green for grass (bright green for land)
+                        } 
+                        // Ground/Stone colors
+                        else if (tilesetName.includes('Stone')) {
+                            color = 0xA0A0A0; // Light gray for stone
+                        } else if (tilesetName.includes('Ground')) {
+                            color = 0xD2B48C; // Tan for ground
+                        } 
+                        // Structure colors
+                        else if (tilesetName.includes('Wall')) {
+                            color = 0x696969; // Dim gray for walls
+                        } else if (tilesetName.includes('Struct')) {
+                            color = 0x8B4513; // Saddle brown for structures
+                        } 
+                        // Decoration colors
+                        else if (tilesetName.includes('Props')) {
+                            color = 0xDEB887; // Burlywood for props
+                        } else if (tilesetName.includes('Plant')) {
+                            color = 0x228B22; // Forest green for plants
+                        }
+                        
                         minimapGraphics.fillStyle(color, alpha);
+                        
+                        // Position tiles correctly within world bounds
+                        const tileWorldX = x * tilemap.tileWidth;
+                        const tileWorldY = y * tilemap.tileHeight;
+                        const tileMapX = minimapX + tilemapOffsetX + (tileWorldX * scale);
+                        const tileMapY = minimapY + tilemapOffsetY + (tileWorldY * scale);
+                        
                         minimapGraphics.fillRect(
-                            minimapX + (x * tileSize),
-                            minimapY + (y * tileSize),
-                            tileSize,
-                            tileSize
+                            tileMapX,
+                            tileMapY,
+                            Math.max(1, tileSize),
+                            Math.max(1, tileSize)
                         );
+                        tilesDrawn++;
+                        layerTileCount++;
                     }
                 }
             }
+            console.log('[MapScene]   Layer', layer.name, 'drew', layerTileCount, 'tiles');
         });
+        
+        console.log('[MapScene] ========== LAYER SUMMARY ==========');
+        console.log('[MapScene] Total tiles drawn:', tilesDrawn);
+        console.log('[MapScene] Tiles by tileset:', tilesetCounts);
+        console.log('[MapScene] ========================================');
 
-        // Draw grid for better visibility
-        minimapGraphics.lineStyle(1, 0xffffff, 0.1);
-        for (let x = 0; x <= tilemap.width; x++) {
-            minimapGraphics.beginPath();
-            minimapGraphics.moveTo(minimapX + (x * tileSize), minimapY);
-            minimapGraphics.lineTo(minimapX + (x * tileSize), minimapY + minimapHeight);
-            minimapGraphics.strokePath();
-        }
-        for (let y = 0; y <= tilemap.height; y++) {
-            minimapGraphics.beginPath();
-            minimapGraphics.moveTo(minimapX, minimapY + (y * tileSize));
-            minimapGraphics.lineTo(minimapX + minimapWidth, minimapY + (y * tileSize));
-            minimapGraphics.strokePath();
+        // Draw grid for better visibility (only if tiles are large enough)
+        if (tileSize >= 4) {
+            minimapGraphics.lineStyle(1, 0xffffff, 0.1);
+            for (let x = 0; x <= tilemap.width; x++) {
+                const gridX = minimapX + tilemapOffsetX + (x * tilemap.tileWidth * scale);
+                minimapGraphics.beginPath();
+                minimapGraphics.moveTo(gridX, minimapY + tilemapOffsetY);
+                minimapGraphics.lineTo(gridX, minimapY + tilemapOffsetY + (tilemap.height * tilemap.tileHeight * scale));
+                minimapGraphics.strokePath();
+            }
+            for (let y = 0; y <= tilemap.height; y++) {
+                const gridY = minimapY + tilemapOffsetY + (y * tilemap.tileHeight * scale);
+                minimapGraphics.beginPath();
+                minimapGraphics.moveTo(minimapX + tilemapOffsetX, gridY);
+                minimapGraphics.lineTo(minimapX + tilemapOffsetX + (tilemap.width * tilemap.tileWidth * scale), gridY);
+                minimapGraphics.strokePath();
+            }
         }
 
         // Draw player on minimap with enhanced visibility
         if (this.playerPosition) {
-            const playerX = minimapX + (this.playerPosition.x / tilemap.tileWidth) * tileSize;
-            const playerY = minimapY + (this.playerPosition.y / tilemap.tileHeight) * tileSize;
+            // Convert player world position to map position
+            const playerMapX = minimapX + tilemapOffsetX + (this.playerPosition.x * scale);
+            const playerMapY = minimapY + tilemapOffsetY + (this.playerPosition.y * scale);
+            
+            // Scale glow effects based on scale
+            const glowSize1 = Math.max(4, scale * 40);
+            const glowSize2 = Math.max(3, scale * 30);
+            const markerSize = Math.max(2, scale * 20);
             
             // Add player glow effect
-            minimapGraphics.lineStyle(6, 0xffffff, 0.3);
-            minimapGraphics.strokeCircle(playerX, playerY, 8);
-            minimapGraphics.lineStyle(4, 0xffffff, 0.5);
-            minimapGraphics.strokeCircle(playerX, playerY, 6);
+            minimapGraphics.lineStyle(Math.max(1, scale * 5), 0xffffff, 0.3);
+            minimapGraphics.strokeCircle(playerMapX, playerMapY, glowSize1);
+            minimapGraphics.lineStyle(Math.max(1, scale * 3), 0xffffff, 0.5);
+            minimapGraphics.strokeCircle(playerMapX, playerMapY, glowSize2);
             
             // Draw player marker
-            minimapGraphics.lineStyle(2, 0x000000);
+            minimapGraphics.lineStyle(1, 0x000000);
             minimapGraphics.fillStyle(0xffffff);
-            minimapGraphics.fillCircle(playerX, playerY, 4);
-            minimapGraphics.strokeCircle(playerX, playerY, 4);
+            minimapGraphics.fillCircle(playerMapX, playerMapY, markerSize);
+            minimapGraphics.strokeCircle(playerMapX, playerMapY, markerSize);
         }
 
         // Add enhanced minimap label - centered above the map
-        const label = this.add.text(minimapX + (minimapWidth / 2), minimapY - 30, 'Map View', {
+        const label = this.add.text(minimapX + (minimapWidth / 2), minimapY - 30, 'WORLD MAP', {
             fontSize: '20px',
             color: '#ffffff',
             backgroundColor: '#000000',
             padding: { x: 10, y: 5 }
         });
         label.setOrigin(0.5, 0); // Center the text above the map
+        label.setScrollFactor(0); // Keep label fixed
     }
 
     startTransitionSequence() {

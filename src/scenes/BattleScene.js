@@ -231,40 +231,7 @@ export default class BattleScene extends Phaser.Scene {
             // Add to enemies array
             this.enemies.push(enemy);
 
-            // Calculate position for the text (centered above each enemy)
-            const textX = enemy.x;
-            const textY = enemy.y - enemy.height/2 - 30; // 30 pixels above the enemy
-
-            // Create health text
-            const healthText = this.add.text(
-                textX,
-                textY,
-                `HP: ${enemy.enemyData.health}/${enemy.enemyData.maxHealth}`,
-                {
-                    fontSize: '16px',
-                    fill: '#ff0000',
-                    backgroundColor: '#000000',
-                    padding: { x: 4, y: 2 }
-                }
-            ).setOrigin(0.5); // Center align the text
-
-            // Create level text
-            const levelText = this.add.text(
-                textX,
-                textY - 20, // 20 pixels above health text
-                `Lvl ${enemy.enemyData.level}`,
-                {
-                    fontSize: '14px',
-                    fill: '#ffff00',
-                    backgroundColor: '#000000',
-                    padding: { x: 4, y: 2 }
-                }
-            ).setOrigin(0.5);
-
-            // Store references to the texts
-            this.enemyHealthTexts.push(healthText);
-            this.enemyLevelTexts.push(levelText);
-            this.textDisplays.push(healthText, levelText);
+            // NPC stats are now only shown in DOM (HUD), not in Phaser layer
         });
 
         // Add collision between player and enemies
@@ -276,7 +243,7 @@ export default class BattleScene extends Phaser.Scene {
         // Add collision between enemies and attack sprite
         this.physics.add.collider(this.enemies, this.attackSprite, this.handleAttackEnemyCollision, null, this);
 
-        // Create charge bar
+        // Create charge bar (initially hidden)
         this.createChargeBar();
 
         // Set up camera
@@ -794,9 +761,18 @@ export default class BattleScene extends Phaser.Scene {
         this.chargeTime = Math.min(this.chargeTime + 16, this.maxChargeTime); // 16ms per frame
         const chargePercent = this.chargeTime / this.maxChargeTime;
         
-        // Update charge bar width
-        const barWidth = 100;
-        this.chargeBar.width = barWidth * chargePercent;
+        // Position bars 5 pixels below the player
+        const barX = this.player.x;
+        const barY = this.player.y + (this.player.height / 2) + 25;
+        
+        // Show and position background bar
+        this.chargeBarBackground.setPosition(barX, barY);
+        this.chargeBarBackground.setVisible(true);
+        
+        // Update charge bar width and position
+        this.chargeBar.width = this.chargeBarWidth * chargePercent;
+        this.chargeBar.setPosition(barX - this.chargeBarWidth / 2, barY);
+        this.chargeBar.setVisible(true);
         
         // Update charge bar color based on charge level
         if (chargePercent < 0.5) {
@@ -821,6 +797,10 @@ export default class BattleScene extends Phaser.Scene {
         this.isCharging = false;
         this.chargeTime = 0;
         this.chargeBar.width = 0;
+        
+        // Hide the charge bars
+        this.chargeBarBackground.setVisible(false);
+        this.chargeBar.setVisible(false);
     }
 
     shootChargedProjectile() {
@@ -925,28 +905,31 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     createChargeBar() {
-        // Create charge bar background
+        // Create charge bar background (positioned relative to player)
         const barWidth = 100;
         const barHeight = 10;
-        const barX = this.cameras.main.width / 2;
-        const barY = 50;
+        
+        this.chargeBarWidth = barWidth;
+        this.chargeBarHeight = barHeight;
         
         this.chargeBarBackground = this.add.rectangle(
-            barX,
-            barY,
+            0,
+            0,
             barWidth,
             barHeight,
             0x333333
         );
+        this.chargeBarBackground.setVisible(false);
         
         this.chargeBar = this.add.rectangle(
-            barX - barWidth/2,
-            barY,
+            0,
+            0,
             0,
             barHeight,
             0x00ff00
         );
         this.chargeBar.setOrigin(0, 0.5);
+        this.chargeBar.setVisible(false);
     }
 
     updateEnemyDisplays() {
@@ -982,23 +965,25 @@ export default class BattleScene extends Phaser.Scene {
             this.hudManager = null;
         }
         
-        // Destroy all enemies
+        // Destroy all enemies (no text displays to clean up - using DOM only)
         this.enemies.forEach(enemy => {
-            if (enemy.healthText) enemy.healthText.destroy();
-            if (enemy.levelText) enemy.levelText.destroy();
-            if (enemy.sprite) enemy.sprite.destroy();
+            if (enemy && enemy.destroy) enemy.destroy();
         });
         this.enemies = [];
         
         // Destroy all projectiles
         if (this.projectiles && Array.isArray(this.projectiles)) {
-            this.projectiles.forEach(projectile => projectile.destroy());
+            this.projectiles.forEach(projectile => {
+                if (projectile && projectile.destroy) projectile.destroy();
+            });
         }
         this.projectiles = [];
         
-        // Destroy all text displays
+        // Destroy all text displays (victory text only now)
         if (this.textDisplays && Array.isArray(this.textDisplays)) {
-            this.textDisplays.forEach(display => display.destroy());
+            this.textDisplays.forEach(display => {
+                if (display && display.destroy) display.destroy();
+            });
         }
         this.textDisplays = [];
         
@@ -1022,6 +1007,10 @@ export default class BattleScene extends Phaser.Scene {
         this.chargeStartTime = 0;
         this.isVictorySequence = false;
         this.defeatedEnemyIds = [];
+        
+        // Hide charge bars
+        if (this.chargeBarBackground) this.chargeBarBackground.setVisible(false);
+        if (this.chargeBar) this.chargeBar.setVisible(false);
         
         // Clear all tweens and timers
         this.tweens.killAll();
@@ -1057,20 +1046,7 @@ export default class BattleScene extends Phaser.Scene {
             console.log('[BattleScene] Total defeated in this battle:', this.defeatedEnemyIds);
         }
         
-        const index = this.enemies.indexOf(enemy);
-        if (index !== -1) {
-            // Remove displays
-            if (this.enemyHealthTexts[index]) {
-                this.enemyHealthTexts[index].destroy();
-                this.enemyHealthTexts.splice(index, 1);
-            }
-            if (this.enemyLevelTexts[index]) {
-                this.enemyLevelTexts[index].destroy();
-                this.enemyLevelTexts.splice(index, 1);
-            }
-        }
-        
-        // Remove enemy
+        // Remove enemy (no Phaser text displays to clean up - using DOM only)
         enemy.destroy();
         this.enemies = this.enemies.filter(e => e !== enemy);
 
@@ -1094,68 +1070,102 @@ export default class BattleScene extends Phaser.Scene {
         // (this.enemies array is empty by the time we get here)
         console.log('[BattleScene] Defeated NPC IDs:', this.defeatedEnemyIds);
         
-        // Center camera on player
-        this.cameras.main.centerOn(this.player.x, this.player.y);
+        // Center camera on screen center
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
         
-        // Create victory text
+        // Create dramatic glowing gold victory text
         const victoryText = this.add.text(
-            this.player.x,
-            this.player.y - 50,
+            centerX,
+            centerY,
             'VICTORY!',
             {
-                fontSize: '48px',
-                fontFamily: 'Arial',
-                color: '#ffffff',
-                stroke: '#000000',
-                strokeThickness: 6
+                fontSize: '96px',
+                fontFamily: 'Arial Black, Arial',
+                fontStyle: 'bold',
+                color: '#FFD700', // Gold color
+                stroke: '#B8860B', // Dark goldenrod stroke
+                strokeThickness: 8,
+                shadow: {
+                    offsetX: 0,
+                    offsetY: 0,
+                    color: '#FFD700',
+                    blur: 20,
+                    fill: true
+                }
             }
-        ).setOrigin(0.5);
+        ).setOrigin(0.5).setAlpha(0).setScale(0.5);
         this.textDisplays.push(victoryText);
         
-        // Animate victory text
+        // Dramatic entrance animation with glowing effect
         this.tweens.add({
             targets: victoryText,
-            y: victoryText.y - 100,
-            alpha: 0,
-            duration: 2000,
-            onComplete: () => {
-                victoryText.destroy();
-                
-                // Create black rectangle for fade out
-                const fadeRect = this.add.rectangle(
-                    0, 0,
-                    this.cameras.main.width,
-                    this.cameras.main.height,
-                    0x000000
-                ).setOrigin(0).setDepth(1000);
-                
-                // Fade to black
-                this.tweens.add({
-                    targets: fadeRect,
-                    alpha: 1,
-                    duration: 1000,
-                    onComplete: () => {
-                        // Prepare transition data
-                        const transitionData = {
-                            battleVictory: true,
-                            returnPosition: this.worldPosition,
-                            defeatedNpcIds: this.defeatedEnemyIds,
-                            transitionType: 'victory'
-                        };
-                        
-                        console.log('[BattleScene] ========== VICTORY TRANSITION ==========');
-                        console.log('[BattleScene] Defeated enemy IDs collected:', this.defeatedEnemyIds);
-                        console.log('[BattleScene] Transition data:', JSON.stringify(transitionData, null, 2));
-                        
-                        // Clean up the scene
-                        this.cleanup();
-                        
-                        // Resume WorldScene first (which was paused), THEN stop this scene
-                        this.scene.resume('WorldScene', transitionData);
-                        this.scene.stop();
-                    }
-                });
-            }
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: 'Elastic.Out',
+            yoyo: false
+        });
+        
+        // Pulsing glow effect
+        this.tweens.add({
+            targets: victoryText,
+            scaleX: 1.25,
+            scaleY: 1.25,
+            duration: 1000,
+            ease: 'Sine.InOut',
+            yoyo: true,
+            repeat: 1
+        });
+        
+        // Fade out and exit animation
+        this.time.delayedCall(2000, () => {
+            this.tweens.add({
+                targets: victoryText,
+                y: victoryText.y - 50,
+                alpha: 0,
+                scale: 0.8,
+                duration: 1000,
+                ease: 'Power2.In',
+                onComplete: () => {
+                    victoryText.destroy();
+                    
+                    // Create black rectangle for fade out
+                    const fadeRect = this.add.rectangle(
+                        0, 0,
+                        this.cameras.main.width,
+                        this.cameras.main.height,
+                        0x000000
+                    ).setOrigin(0).setDepth(1000);
+                    
+                    // Fade to black
+                    this.tweens.add({
+                        targets: fadeRect,
+                        alpha: 1,
+                        duration: 1000,
+                        onComplete: () => {
+                            // Prepare transition data
+                            const transitionData = {
+                                battleVictory: true,
+                                returnPosition: this.worldPosition,
+                                defeatedNpcIds: this.defeatedEnemyIds,
+                                transitionType: 'victory'
+                            };
+                            
+                            console.log('[BattleScene] ========== VICTORY TRANSITION ==========');
+                            console.log('[BattleScene] Defeated enemy IDs collected:', this.defeatedEnemyIds);
+                            console.log('[BattleScene] Transition data:', JSON.stringify(transitionData, null, 2));
+                            
+                            // Clean up the scene
+                            this.cleanup();
+                            
+                            // Resume WorldScene first (which was paused), THEN stop this scene
+                            this.scene.resume('WorldScene', transitionData);
+                            this.scene.stop();
+                        }
+                    });
+                }
+            });
         });
     }
 }

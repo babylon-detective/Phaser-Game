@@ -204,11 +204,6 @@ export default class WorldScene extends Phaser.Scene {
             }
         });
 
-        // Visual debugging for world bounds
-        const debugGraphics = this.add.graphics();
-        debugGraphics.lineStyle(2, 0xff0000); // Red line
-        debugGraphics.strokeRect(0, 0, worldWidth, worldHeight);
-
         // Position player and camera
         if (this.returnPosition && this.playerManager.player) {
             console.log('Setting player position to returnPosition:', this.returnPosition);
@@ -219,14 +214,8 @@ export default class WorldScene extends Phaser.Scene {
             this.cameras.main.centerOn(mapWidth / 2, mapHeight / 2);
         }
 
-        // Save button
-        const saveLocation = this.add.text(100, 200, 'Save Location', { fontSize: '24px', fill: '#fff' }).setInteractive();
-        saveLocation.on('pointerdown', () => {
-            SaveState.save({ scene: 'WorldScene', data: { x: 100, y: 200 } });
-        });
-
-         // Basic text
-         this.add.text(100, 100, 'World View', { fontSize: '32px', fill: '#fff' });
+        // Create charge gauge bar for Shift button
+        this.createChargeGauge();
 
         function adjustCameraForDevice() {
             const width = window.innerWidth;
@@ -352,6 +341,63 @@ export default class WorldScene extends Phaser.Scene {
         }
     }
 
+    createChargeGauge() {
+        // Create charge gauge graphics
+        this.chargeGaugeBackground = this.add.graphics();
+        this.chargeGaugeFill = this.add.graphics();
+        
+        // Set depth to appear above player
+        this.chargeGaugeBackground.setDepth(1000);
+        this.chargeGaugeFill.setDepth(1001);
+        
+        // Gauge dimensions
+        this.gaugeWidth = 60;
+        this.gaugeHeight = 6;
+        this.gaugeOffsetY = 48; // Distance below player
+    }
+
+    updateChargeGauge() {
+        if (!this.playerManager || !this.playerManager.player || !this.playerManager.controls) return;
+        
+        const player = this.playerManager.player;
+        const controls = this.playerManager.controls;
+        const isCharging = controls.isCharging;
+        
+        // Position gauge below player
+        const gaugeX = player.x - this.gaugeWidth / 2;
+        const gaugeY = player.y + this.gaugeOffsetY;
+        
+        // Clear previous drawings
+        this.chargeGaugeBackground.clear();
+        this.chargeGaugeFill.clear();
+        
+        // Only show while Shift is being held (charging)
+        if (isCharging) {
+            // Calculate charge percentage
+            const chargeTime = this.time.now - controls.chargeStartTime;
+            const chargePercent = Math.min(chargeTime / controls.chargeRequired, 1);
+            
+            // Draw background (black with white border)
+            this.chargeGaugeBackground.lineStyle(1, 0xffffff, 0.8);
+            this.chargeGaugeBackground.fillStyle(0x000000, 0.6);
+            this.chargeGaugeBackground.fillRect(gaugeX, gaugeY, this.gaugeWidth, this.gaugeHeight);
+            this.chargeGaugeBackground.strokeRect(gaugeX, gaugeY, this.gaugeWidth, this.gaugeHeight);
+            
+            // Determine fill color based on charge level
+            let fillColor;
+            if (chargePercent >= 1) {
+                fillColor = 0xffff00; // Yellow when fully charged
+            } else {
+                fillColor = 0xffffff; // White while charging
+            }
+            
+            // Draw fill
+            const fillWidth = this.gaugeWidth * chargePercent;
+            this.chargeGaugeFill.fillStyle(fillColor, 0.9);
+            this.chargeGaugeFill.fillRect(gaugeX, gaugeY, fillWidth, this.gaugeHeight);
+        }
+    }
+
     update() {
         // Player update
         this.playerManager?.update();
@@ -363,6 +409,9 @@ export default class WorldScene extends Phaser.Scene {
         if (this.playerManager && this.playerManager.player) {
             this.npcManager.checkInteraction(this.playerManager.player);
         }
+        
+        // Update charge gauge
+        this.updateChargeGauge();
     }
 
     wake(sys, data) {
@@ -466,6 +515,16 @@ export default class WorldScene extends Phaser.Scene {
         if (this.npcManager) {
             // Clean up NPC manager resources
             this.npcManager = null;
+        }
+        
+        // Clean up charge gauge graphics
+        if (this.chargeGaugeBackground) {
+            this.chargeGaugeBackground.destroy();
+            this.chargeGaugeBackground = null;
+        }
+        if (this.chargeGaugeFill) {
+            this.chargeGaugeFill.destroy();
+            this.chargeGaugeFill = null;
         }
         
         // Call parent shutdown
