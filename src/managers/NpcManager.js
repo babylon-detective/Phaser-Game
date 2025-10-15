@@ -671,4 +671,37 @@ export default class NpcManager {
         console.log(`[NpcManager] Removed ${npcsToRemove.length} defeated NPCs. NPCs array: ${beforeLength} -> ${afterLength}`);
         console.log(`[NpcManager] Remaining NPC IDs:`, this.npcs.map(n => n.npcData.id));
     }
+
+    /**
+     * Update NPC health after battle
+     * @param {Array} healthUpdates - Array of {id, health, maxHealth} objects
+     */
+    updateNpcHealth(healthUpdates) {
+        console.log('[NpcManager] Updating NPC health:', healthUpdates);
+        
+        healthUpdates.forEach(update => {
+            const npc = this.npcs.find(n => n.npcData.id === update.id);
+            
+            if (npc) {
+                const oldHealth = npc.npcData.health;
+                npc.npcData.health = update.health;
+                npc.npcData.maxHealth = update.maxHealth;
+                
+                console.log(`[NpcManager] Updated NPC ${update.id} health: ${oldHealth} -> ${update.health}/${update.maxHealth}`);
+                
+                // Optional: Visual feedback for damaged NPCs
+                if (update.health < update.maxHealth) {
+                    // Tint the NPC slightly red to indicate damage
+                    const damagePercent = update.health / update.maxHealth;
+                    if (damagePercent < 0.5) {
+                        npc.setAlpha(0.8); // More transparent when heavily damaged
+                    }
+                }
+            } else {
+                console.warn(`[NpcManager] Could not find NPC with ID: ${update.id}`);
+            }
+        });
+        
+        console.log('[NpcManager] Health update complete');
+    }
 }

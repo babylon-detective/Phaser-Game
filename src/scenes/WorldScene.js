@@ -5,6 +5,7 @@ import PlayerManager from "../managers/PlayerManager";
 import NpcManager from "../managers/NpcManager";
 import HUDManager from "../ui/HUDManager";
 import MapScene from "./MapScene";
+import { gameStateManager } from "../managers/GameStateManager.js";
 
 export default class WorldScene extends Phaser.Scene {
     constructor() {
@@ -170,9 +171,8 @@ export default class WorldScene extends Phaser.Scene {
         this.hudManager = new HUDManager(this);
         this.hudManager.create();
         
-        // Initialize HUD with current game state
-        this.hudManager.updatePlayerHealth(100, 100);
-        this.hudManager.updatePlayerLevel(1);
+        // Initialize HUD with current game state from GameStateManager
+        this.hudManager.updatePlayerStats();
         this.hudManager.updateNPCCount(
             this.defeatedNpcIds ? this.defeatedNpcIds.length : 0,
             15 - (this.defeatedNpcIds ? this.defeatedNpcIds.length : 0)
@@ -245,6 +245,16 @@ export default class WorldScene extends Phaser.Scene {
             });
         });
 
+        // Set up / key to open the menu (using keyCode 191 directly)
+        const slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
+        slashKey.on('down', () => {
+            console.log('[WorldScene] / key pressed, opening menu');
+            this.scene.pause();
+            this.scene.launch('MenuScene', {
+                playerPosition: this.playerManager.getPlayerPosition()
+            });
+        });
+
         // Add click debugging
         this.input.on('pointerdown', (pointer) => {
             const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
@@ -279,6 +289,14 @@ export default class WorldScene extends Phaser.Scene {
             if (data) {
                 console.log('[WorldScene] EVENT: Processing resume event data', data);
                 this.handleResumeData(data);
+            }
+        });
+
+        // Listen for menu closed event to update HUD immediately
+        this.events.on('menu-closed', () => {
+            console.log('[WorldScene] EVENT: Menu closed, updating HUD stats');
+            if (this.hudManager) {
+                this.hudManager.updatePlayerStats();
             }
         });
 
@@ -329,14 +347,18 @@ export default class WorldScene extends Phaser.Scene {
                 this.npcManager.handleBattleEnd();
             }
         } else if (data.transitionType === 'escape') {
+            console.log('[WorldScene] Processing escape from battle');
+            
             // Set player position
             if (data.returnPosition && this.playerManager && this.playerManager.player) {
                 this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
                 this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
             }
             
-            if (this.npcManager) {
-                this.npcManager.resetNpcs();
+            // Update NPC health with data from battle
+            if (this.npcManager && data.updatedNpcHealth) {
+                console.log('[WorldScene] Updating NPC health from battle:', data.updatedNpcHealth);
+                this.npcManager.updateNpcHealth(data.updatedNpcHealth);
             }
         }
     }
@@ -412,6 +434,16 @@ export default class WorldScene extends Phaser.Scene {
         
         // Update charge gauge
         this.updateChargeGauge();
+        
+        // Update HUD stats periodically (every second)
+        if (!this.lastStatsUpdate) {
+            this.lastStatsUpdate = 0;
+        }
+        
+        if (this.time.now - this.lastStatsUpdate >= 1000 && this.hudManager) {
+            this.hudManager.updatePlayerStats();
+            this.lastStatsUpdate = this.time.now;
+        }
     }
 
     wake(sys, data) {
@@ -448,10 +480,18 @@ export default class WorldScene extends Phaser.Scene {
             this.handleResumeData(data);
         }
         
-        // Update HUD with current stats (always update after resume)
+        // Update HUD with current stats from GameStateManager (always update after resume)
         if (this.hudManager) {
-            this.hudManager.updatePlayerHealth(100, 100);
-            this.hudManager.updatePlayerLevel(1);
+            console.log('[WorldScene] Resume: Updating player stats from GameStateManager');
+            const stats = gameStateManager.getPlayerStats();
+            console.log('[WorldScene] Current stats:', { level: stats.level, xp: stats.experience, health: stats.health });
+            this.hudManager.updatePlayerStats();
+            // Force a fresh update after a short delay to ensure UI reflects changes
+            this.time.delayedCall(100, () => {
+                if (this.hudManager) {
+                    this.hudManager.updatePlayerStats();
+                }
+            });
         }
         
         // Re-enable physics and collisions

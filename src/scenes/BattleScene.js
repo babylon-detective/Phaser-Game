@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import HUDManager from "../ui/HUDManager";
+import { gameStateManager } from "../managers/GameStateManager.js";
+import { statsManager } from "../managers/StatsManager.js";
 
 export default class BattleScene extends Phaser.Scene {
     constructor() {
@@ -54,6 +56,8 @@ export default class BattleScene extends Phaser.Scene {
         this.victoryText = null;
         this.isVictorySequence = false;
         this.defeatedEnemyIds = []; // Track defeated enemy IDs during battle
+        this.totalXpEarned = 0; // Track total XP earned this battle
+        this.defeatedEnemiesData = []; // Store defeated enemy data for XP calculation
     }
 
     init(data) {
@@ -137,6 +141,8 @@ export default class BattleScene extends Phaser.Scene {
         this.isVictorySequence = false;
         this.isBattleActive = true;
         this.defeatedEnemyIds = []; // Reset defeated enemy tracking
+        this.totalXpEarned = 0; // Reset XP tracking
+        this.defeatedEnemiesData = []; // Reset defeated enemies data
 
         // Set up background color to ensure WorldScene is hidden
         this.cameras.main.setBackgroundColor('#000000');
@@ -254,9 +260,8 @@ export default class BattleScene extends Phaser.Scene {
         this.hudManager = new HUDManager(this);
         this.hudManager.create();
         
-        // Initialize HUD with player data
-        this.hudManager.updatePlayerHealth(this.playerData.health, this.playerData.health);
-        this.hudManager.updatePlayerLevel(this.playerData.level);
+        // Initialize HUD with player data from GameStateManager
+        this.hudManager.updatePlayerStats();
         
         // Initialize enemy list in HUD
         this.updateEnemyHUD();
@@ -379,6 +384,15 @@ export default class BattleScene extends Phaser.Scene {
 
         console.log('[BattleScene] Returning to world');
         
+        // Collect current NPC health data before cleanup
+        const updatedNpcHealth = this.enemies.map(enemy => ({
+            id: enemy.enemyData.id,
+            health: enemy.enemyData.health,
+            maxHealth: enemy.enemyData.maxHealth
+        }));
+        
+        console.log('[BattleScene] NPC health on escape:', updatedNpcHealth);
+        
         // Clean up all game objects and physics
         this.cleanup();
 
@@ -394,11 +408,12 @@ export default class BattleScene extends Phaser.Scene {
             duration: 500,
             ease: 'Power2',
             onComplete: () => {
-                // Resume WorldScene with transition state, THEN stop this scene
+                // Resume WorldScene with transition state AND updated NPC health
                 this.scene.resume('WorldScene', { 
                     battleVictory: false,
                     returnPosition: this.worldPosition,
-                    transitionType: 'escape'
+                    transitionType: 'escape',
+                    updatedNpcHealth: updatedNpcHealth
                 });
                 this.scene.stop();
             }
@@ -1036,12 +1051,97 @@ export default class BattleScene extends Phaser.Scene {
         super.shutdown();
     }
 
+    animateXpCounter(xpText, totalXp) {
+        console.log(`[BattleScene] Animating XP counter from 0 to ${totalXp}`);
+        
+        let currentXp = 0;
+        const incrementSpeed = Math.max(1, Math.floor(totalXp / 60)); // Complete in ~1 second at 60fps
+        
+        // Create a timer to count up the XP
+        const xpTimer = this.time.addEvent({
+            delay: 16, // ~60fps
+            repeat: Math.ceil(totalXp / incrementSpeed),
+            callback: () => {
+                currentXp = Math.min(currentXp + incrementSpeed, totalXp);
+                xpText.setText(`EXP: ${currentXp}`);
+                
+                // When finished, apply XP to player
+                if (currentXp >= totalXp) {
+                    console.log(`[BattleScene] XP animation complete, applying ${totalXp} XP to player`);
+                    
+                    // Apply XP to player and check for level up
+                    const result = statsManager.addPlayerExperience(totalXp);
+                    
+                    if (result.leveledUp) {
+                        console.log(`[BattleScene] 🎉 PLAYER LEVELED UP to ${result.newLevel}!`);
+                        console.log(`[BattleScene] Stats gained:`, result.statsGained);
+                        
+                        // Show level up notification
+                        this.showLevelUpNotification(result.newLevel, result.statsGained);
+                    }
+                }
+            }
+        });
+    }
+
+    showLevelUpNotification(newLevel, statsGained) {
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        // Create level up text
+        const levelUpText = this.add.text(
+            centerX,
+            centerY + 120,
+            `LEVEL UP!\nLevel ${newLevel}`,
+            {
+                fontSize: '40px',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                color: '#FFD700',
+                stroke: '#FF6B00',
+                strokeThickness: 4,
+                align: 'center'
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        this.textDisplays.push(levelUpText);
+        
+        // Dramatic appearance
+        this.tweens.add({
+            targets: levelUpText,
+            alpha: 1,
+            scale: 1.3,
+            duration: 500,
+            ease: 'Back.Out'
+        });
+        
+        // Pulse effect
+        this.tweens.add({
+            targets: levelUpText,
+            scaleX: 1.4,
+            scaleY: 1.4,
+            duration: 800,
+            ease: 'Sine.InOut',
+            yoyo: true,
+            repeat: -1
+        });
+        
+        console.log('[BattleScene] Level up notification displayed');
+    }
+
     handleEnemyDefeat(enemy) {
         console.log('[BattleScene] Handling enemy defeat:', enemy.enemyData.id);
         
-        // IMPORTANT: Store the defeated enemy ID BEFORE removing the enemy
+        // IMPORTANT: Store the defeated enemy ID AND data BEFORE removing the enemy
         if (enemy.enemyData && enemy.enemyData.id) {
             this.defeatedEnemyIds.push(enemy.enemyData.id);
+            
+            // Store enemy data for XP calculation
+            this.defeatedEnemiesData.push({
+                id: enemy.enemyData.id,
+                type: enemy.enemyData.type,
+                level: enemy.enemyData.level
+            });
+            
             console.log('[BattleScene] Stored defeated enemy ID:', enemy.enemyData.id);
             console.log('[BattleScene] Total defeated in this battle:', this.defeatedEnemyIds);
         }
@@ -1070,6 +1170,18 @@ export default class BattleScene extends Phaser.Scene {
         // (this.enemies array is empty by the time we get here)
         console.log('[BattleScene] Defeated NPC IDs:', this.defeatedEnemyIds);
         
+        // Calculate total XP from defeated enemies
+        const playerLevel = gameStateManager.playerStats.level;
+        this.totalXpEarned = 0;
+        
+        this.defeatedEnemiesData.forEach(enemy => {
+            const xp = statsManager.calculateBattleXp(enemy.level, playerLevel, enemy.type);
+            this.totalXpEarned += xp;
+            console.log(`[BattleScene] XP from ${enemy.type} (Lvl ${enemy.level}): ${xp}`);
+        });
+        
+        console.log(`[BattleScene] Total XP earned: ${this.totalXpEarned}`);
+        
         // Center camera on screen center
         const centerX = this.cameras.main.width / 2;
         const centerY = this.cameras.main.height / 2;
@@ -1077,7 +1189,7 @@ export default class BattleScene extends Phaser.Scene {
         // Create dramatic glowing gold victory text
         const victoryText = this.add.text(
             centerX,
-            centerY,
+            centerY - 50,
             'VICTORY!',
             {
                 fontSize: '96px',
@@ -1096,6 +1208,22 @@ export default class BattleScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setAlpha(0).setScale(0.5);
         this.textDisplays.push(victoryText);
+        
+        // Create XP counter text
+        const xpText = this.add.text(
+            centerX,
+            centerY + 50,
+            `EXP: 0`,
+            {
+                fontSize: '48px',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                color: '#00D9FF', // Cyan color
+                stroke: '#0066CC',
+                strokeThickness: 4
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        this.textDisplays.push(xpText);
         
         // Dramatic entrance animation with glowing effect
         this.tweens.add({
@@ -1118,8 +1246,20 @@ export default class BattleScene extends Phaser.Scene {
             repeat: 1
         });
         
+        // Fade in XP text
+        this.tweens.add({
+            targets: xpText,
+            alpha: 1,
+            duration: 500,
+            delay: 800,
+            onComplete: () => {
+                // Start XP countdown animation
+                this.animateXpCounter(xpText, this.totalXpEarned);
+            }
+        });
+        
         // Fade out and exit animation
-        this.time.delayedCall(2000, () => {
+        this.time.delayedCall(3500, () => {
             this.tweens.add({
                 targets: victoryText,
                 y: victoryText.y - 50,

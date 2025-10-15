@@ -5,6 +5,7 @@ import WorldScene from "./scenes/WorldScene";
 import BattleScene from "./scenes/BattleScene";
 import ShooterScene from "./scenes/ShooterScene";
 import MapScene from "./scenes/MapScene";
+import MenuScene from "./scenes/MenuScene";
 
 import PlayerManager from "./managers/PlayerManager";
 import NpcManager from "./managers/NpcManager";
@@ -33,7 +34,7 @@ const config = {
             debug: false
         }
     },
-    scene: [StartScene, WorldScene, BattleScene, ShooterScene, MapScene]
+    scene: [StartScene, WorldScene, BattleScene, ShooterScene, MapScene, MenuScene]
 };
 
 const game = new Phaser.Game(config);

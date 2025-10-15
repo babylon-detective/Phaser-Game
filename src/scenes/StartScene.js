@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import SaveState from "../SaveState";
+import { gameStateManager } from "../managers/GameStateManager.js";
 
 export default class StartScene extends Phaser.Scene {
     constructor() {
@@ -79,10 +80,26 @@ export default class StartScene extends Phaser.Scene {
 
     selectMenuItem(index) {
         if (index === 0) {
+            // Start new game
             SaveState.clear(); // Clear any existing save state
+            gameStateManager.resetGame(); // Reset game state
+            gameStateManager.startTimer(); // Start gameplay timer
+            console.log('[StartScene] Starting new game, timer initialized');
             this.scene.start('WorldScene');
         } else if (index === 1) {
+            // Continue game
             const gameState = SaveState.load();
+            const loaded = gameStateManager.loadGame(); // Load saved game state
+            if (loaded) {
+                gameStateManager.startTimer(); // Resume timer
+                console.log('[StartScene] Continuing game, timer resumed');
+            } else {
+                // No save found, start new game
+                gameStateManager.resetGame();
+                gameStateManager.startTimer();
+                console.log('[StartScene] No save found, starting new game');
+            }
+            
             if (gameState) {
                 this.scene.start(gameState.scene, gameState.data);
             } else {

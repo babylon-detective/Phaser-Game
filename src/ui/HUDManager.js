@@ -2,6 +2,8 @@
  * HUDManager - Manages all DOM-based HUD elements
  * Uses HTML/CSS for better styling and performance
  */
+import { gameStateManager } from '../managers/GameStateManager.js';
+
 export default class HUDManager {
     constructor(scene) {
         this.scene = scene;
@@ -39,20 +41,23 @@ export default class HUDManager {
      * Create HUD elements for WorldScene
      */
     createWorldHUD() {
-        // Player Stats Panel
+        // Get player stats from GameStateManager
+        const playerStats = gameStateManager.getPlayerStats();
+
+        // Player Stats Panel - HP and Level only
         this.elements.statsPanel = this.createPanel('stats-panel', 'top-left');
         this.elements.statsPanel.innerHTML = `
-            <div class="hud-title">Player Stats</div>
+            <div class="hud-title">Player</div>
             <div class="stat-row">
                 <span class="stat-label">HP:</span>
                 <div class="stat-bar-container">
                     <div class="stat-bar health-bar" id="player-health-bar"></div>
                 </div>
-                <span class="stat-value" id="player-health-text">100/100</span>
+                <span class="stat-value" id="player-health-text">${playerStats.health}/${playerStats.maxHealth}</span>
             </div>
             <div class="stat-row">
                 <span class="stat-label">Level:</span>
-                <span class="stat-value" id="player-level">1</span>
+                <span class="stat-value" id="player-level">${playerStats.level}</span>
             </div>
         `;
 
@@ -63,6 +68,7 @@ export default class HUDManager {
             <div class="control-row"><kbd>WASD</kbd> Move</div>
             <div class="control-row"><kbd>Shift</kbd> Sprint (Hold & Release)</div>
             <div class="control-row"><kbd>M</kbd> Map</div>
+            <div class="control-row"><kbd>/</kbd> Menu</div>
         `;
 
         // Mini Status Display (top-right)
@@ -83,7 +89,10 @@ export default class HUDManager {
      * Create HUD elements for BattleScene
      */
     createBattleHUD() {
-        // Player Stats (left side)
+        // Get player stats from GameStateManager
+        const playerStats = gameStateManager.getPlayerStats();
+        
+        // Player Stats (left side) - HP and Level only
         this.elements.playerPanel = this.createPanel('player-panel', 'top-left');
         this.elements.playerPanel.innerHTML = `
             <div class="hud-title">Player</div>
@@ -92,11 +101,11 @@ export default class HUDManager {
                 <div class="stat-bar-container">
                     <div class="stat-bar health-bar" id="battle-player-health-bar"></div>
                 </div>
-                <span class="stat-value" id="battle-player-health">100/100</span>
+                <span class="stat-value" id="battle-player-health">${playerStats.health}/${playerStats.maxHealth}</span>
             </div>
             <div class="stat-row">
                 <span class="stat-label">Level:</span>
-                <span class="stat-value" id="battle-player-level">1</span>
+                <span class="stat-value" id="battle-player-level">${playerStats.level}</span>
             </div>
         `;
 
@@ -175,6 +184,20 @@ export default class HUDManager {
         if (battleLevelElement) {
             battleLevelElement.textContent = level;
         }
+    }
+
+    /**
+     * Update all player stats from GameStateManager
+     * Only updates HP and Level for WorldScene/BattleScene HUDs
+     */
+    updatePlayerStats() {
+        const playerStats = gameStateManager.getPlayerStats();
+        
+        // Update level
+        this.updatePlayerLevel(playerStats.level);
+        
+        // Update health
+        this.updatePlayerHealth(playerStats.health, playerStats.maxHealth);
     }
 
     /**
