@@ -595,12 +595,27 @@ export default class WorldScene extends Phaser.Scene {
         `;
         
         document.body.appendChild(this.pauseOverlay);
+        
+        // Add DOM keyboard listener for unpause (works even when Phaser scene is paused)
+        this.pauseKeyListener = (event) => {
+            if (event.key === 'Enter') {
+                console.log('[WorldScene] Enter key detected on pause overlay');
+                this.toggleGamePause();
+            }
+        };
+        document.addEventListener('keydown', this.pauseKeyListener);
     }
     
     removePauseOverlay() {
         if (this.pauseOverlay) {
             this.pauseOverlay.remove();
             this.pauseOverlay = null;
+        }
+        
+        // Remove DOM keyboard listener
+        if (this.pauseKeyListener) {
+            document.removeEventListener('keydown', this.pauseKeyListener);
+            this.pauseKeyListener = null;
         }
     }
 
