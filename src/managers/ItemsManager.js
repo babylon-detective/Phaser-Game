@@ -12,10 +12,7 @@ class ItemsManager {
         this.inventory = [];
         this.maxInventorySize = 50;
         
-        // Initialize with some starting items for testing
-        this.initializeStartingItems();
-        
-        // Item database
+        // Item database (must be defined before initializing starting items)
         this.itemDatabase = {
             'health_potion': {
                 id: 'health_potion',
@@ -66,6 +63,9 @@ class ItemsManager {
                 effect: null
             }
         };
+        
+        // Initialize with some starting items (after database is defined)
+        this.initializeStartingItems();
         
         ItemsManager.instance = this;
     }
