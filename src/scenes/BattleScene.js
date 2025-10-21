@@ -430,11 +430,7 @@ export default class BattleScene extends Phaser.Scene {
     startEnemySelection() {
         console.log('[BattleScene] Starting enemy selection mode');
         
-        // Keep the battle scene PAUSED (already paused from menu)
-        // The scene is still visible when paused, but update() won't process battle logic
-        // because we check isEnemySelectionMode first
-        
-        // Initialize enemy selection state
+        // Initialize enemy selection state FIRST
         this.isEnemySelectionMode = true;
         this.selectedEnemyIndex = 0;
         this.enemyHighlights = [];
@@ -449,9 +445,18 @@ export default class BattleScene extends Phaser.Scene {
             this.enemyHighlights.push(highlight);
         });
         
+        // Set up input for enemy selection BEFORE resuming
+        this.setupEnemySelectionInput();
+        
         // Resume the scene so update() can run (for enemy selection input)
         // But battle logic is blocked by isEnemySelectionMode check
+        console.log('[BattleScene] Resuming scene for enemy selection');
         this.scene.resume();
+        
+        // Ensure input is enabled
+        this.input.enabled = true;
+        this.input.keyboard.enabled = true;
+        console.log('[BattleScene] Input enabled:', this.input.enabled, 'Keyboard enabled:', this.input.keyboard.enabled);
         
         // Highlight the first enemy
         this.updateEnemyHighlight();
@@ -459,8 +464,7 @@ export default class BattleScene extends Phaser.Scene {
         // Create DOM overlay for instructions
         this.createEnemySelectionUI();
         
-        // Set up input for enemy selection
-        this.setupEnemySelectionInput();
+        console.log('[BattleScene] Enemy selection mode ready');
     }
     
     updateEnemyHighlight() {
@@ -556,12 +560,21 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     updateEnemySelection() {
-        if (!this.isEnemySelectionMode) return;
+        if (!this.isEnemySelectionMode) {
+            console.log('[BattleScene] updateEnemySelection called but mode is not active');
+            return;
+        }
+        
+        if (!this.enemySelectionKeys) {
+            console.log('[BattleScene] updateEnemySelection: no keys defined!');
+            return;
+        }
         
         const keys = this.enemySelectionKeys;
         
         // Navigate left (A)
         if (Phaser.Input.Keyboard.JustDown(keys.a)) {
+            console.log('[BattleScene] A key pressed - navigating left');
             this.selectedEnemyIndex--;
             if (this.selectedEnemyIndex < 0) {
                 this.selectedEnemyIndex = this.enemies.length - 1;
@@ -572,6 +585,7 @@ export default class BattleScene extends Phaser.Scene {
         
         // Navigate right (D)
         if (Phaser.Input.Keyboard.JustDown(keys.d)) {
+            console.log('[BattleScene] D key pressed - navigating right');
             this.selectedEnemyIndex++;
             if (this.selectedEnemyIndex >= this.enemies.length) {
                 this.selectedEnemyIndex = 0;
@@ -582,11 +596,13 @@ export default class BattleScene extends Phaser.Scene {
         
         // Confirm selection (])
         if (Phaser.Input.Keyboard.JustDown(keys.confirm)) {
+            console.log('[BattleScene] ] key pressed - confirming selection');
             this.confirmEnemySelection();
         }
         
         // Cancel (ESC)
         if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
+            console.log('[BattleScene] ESC key pressed - cancelling selection');
             this.cancelEnemySelection();
         }
     }
@@ -1243,6 +1259,11 @@ export default class BattleScene extends Phaser.Scene {
         
         // Handle enemy selection mode (separate from normal battle update)
         if (this.isEnemySelectionMode) {
+            // Debug: Log once per second instead of every frame
+            if (!this.lastEnemySelectionLog || Date.now() - this.lastEnemySelectionLog > 1000) {
+                console.log('[BattleScene] update() - in enemy selection mode');
+                this.lastEnemySelectionLog = Date.now();
+            }
             this.updateEnemySelection();
             return; // Don't process battle logic during enemy selection
         }
