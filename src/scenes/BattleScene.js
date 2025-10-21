@@ -503,27 +503,31 @@ export default class BattleScene extends Phaser.Scene {
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            border: 2px solid gold;
+            background: rgba(0, 0, 0, 0.9);
+            border: 3px solid gold;
             border-radius: 10px;
-            padding: 15px 30px;
+            padding: 20px 40px;
             color: white;
             font-family: Arial, sans-serif;
             font-size: 18px;
             text-align: center;
             z-index: 10000;
             pointer-events: none;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
         `;
         
         const selectedEnemy = this.enemies[this.selectedEnemyIndex];
         overlay.innerHTML = `
-            <div style="margin-bottom: 10px; color: gold; font-weight: bold;">
-                SELECT ENEMY TO TALK TO
+            <div style="margin-bottom: 15px; color: gold; font-weight: bold; font-size: 24px;">
+                💬 SELECT ENEMY TO TALK TO
             </div>
-            <div style="margin-bottom: 10px;">
-                ${selectedEnemy.enemyData.type} - Level ${selectedEnemy.enemyData.level}
+            <div style="margin-bottom: 15px; font-size: 20px;">
+                <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
             </div>
-            <div style="font-size: 14px; color: #aaa;">
+            <div style="margin-bottom: 10px; color: #4A90E2;">
+                Level ${selectedEnemy.enemyData.level} | HP: ${selectedEnemy.enemyData.health}/${selectedEnemy.enemyData.maxHealth}
+            </div>
+            <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
                 A/D - Switch Enemy | ] - Confirm | ESC - Cancel
             </div>
         `;
@@ -536,13 +540,16 @@ export default class BattleScene extends Phaser.Scene {
         if (overlay && this.enemies[this.selectedEnemyIndex]) {
             const selectedEnemy = this.enemies[this.selectedEnemyIndex];
             overlay.innerHTML = `
-                <div style="margin-bottom: 10px; color: gold; font-weight: bold;">
-                    SELECT ENEMY TO TALK TO
+                <div style="margin-bottom: 15px; color: gold; font-weight: bold; font-size: 24px;">
+                    💬 SELECT ENEMY TO TALK TO
                 </div>
-                <div style="margin-bottom: 10px;">
-                    ${selectedEnemy.enemyData.type} - Level ${selectedEnemy.enemyData.level}
+                <div style="margin-bottom: 15px; font-size: 20px;">
+                    <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
                 </div>
-                <div style="font-size: 14px; color: #aaa;">
+                <div style="margin-bottom: 10px; color: #4A90E2;">
+                    Level ${selectedEnemy.enemyData.level} | HP: ${selectedEnemy.enemyData.health}/${selectedEnemy.enemyData.maxHealth}
+                </div>
+                <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
                     A/D - Switch Enemy | ] - Confirm | ESC - Cancel
                 </div>
             `;
@@ -550,6 +557,8 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     setupEnemySelectionInput() {
+        console.log('[BattleScene] Setting up enemy selection input');
+        
         // Create key objects for navigation
         this.enemySelectionKeys = {
             a: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
@@ -557,6 +566,18 @@ export default class BattleScene extends Phaser.Scene {
             confirm: this.input.keyboard.addKey(221), // ] key
             cancel: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
         };
+        
+        // Also add DOM-level listener for ESC (works even when Phaser input issues occur)
+        this.enemySelectionEscapeListener = (event) => {
+            if (this.isEnemySelectionMode && event.key === 'Escape') {
+                console.log('[BattleScene] ESC pressed via DOM listener - cancelling enemy selection');
+                event.preventDefault();
+                this.cancelEnemySelection();
+            }
+        };
+        document.addEventListener('keydown', this.enemySelectionEscapeListener);
+        
+        console.log('[BattleScene] Enemy selection keys created:', this.enemySelectionKeys);
     }
     
     updateEnemySelection() {
@@ -630,6 +651,8 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     cleanupEnemySelection() {
+        console.log('[BattleScene] Cleaning up enemy selection');
+        
         // Remove highlights
         if (this.enemyHighlights) {
             this.enemyHighlights.forEach(h => {
@@ -645,6 +668,12 @@ export default class BattleScene extends Phaser.Scene {
             overlay.remove();
         }
         
+        // Remove DOM-level escape listener
+        if (this.enemySelectionEscapeListener) {
+            document.removeEventListener('keydown', this.enemySelectionEscapeListener);
+            this.enemySelectionEscapeListener = null;
+        }
+        
         // Clean up input keys
         if (this.enemySelectionKeys) {
             Object.values(this.enemySelectionKeys).forEach(key => {
@@ -656,6 +685,8 @@ export default class BattleScene extends Phaser.Scene {
         // Reset state
         this.isEnemySelectionMode = false;
         this.selectedEnemyIndex = 0;
+        
+        console.log('[BattleScene] Enemy selection cleanup complete');
     }
     
     startDialogueWithEnemy(enemy) {

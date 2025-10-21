@@ -448,8 +448,8 @@ export default class BattleMenuScene extends Phaser.Scene {
     showSkillsContent() {
         console.log('[BattleMenuScene] Showing skills content');
         
-        // Close the menu temporarily
-        this.closeMenu();
+        // Don't close the menu yet - we need its scene to be active for input
+        // this.closeMenu();
         
         // Create skills overlay (similar to dialogue but for skills)
         const skillsOverlay = document.createElement('div');
@@ -529,6 +529,7 @@ export default class BattleMenuScene extends Phaser.Scene {
                 
                 <div style="text-align: center; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-top: 20px;">
                     <p style="color: #AAA; font-size: 14px; margin: 0 0 10px 0;">Open the <span style="color: #FFD700;">Menu (/)</span> to manage all skills</p>
+                    <p style="color: #FFD700; font-size: 14px; margin: 0 0 10px 0; font-weight: bold;">Press ESC or / to close</p>
                     <button id="close-skills-btn" style="background: #4A90E2; border: none; padding: 10px 30px; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer;">Close</button>
                 </div>
             </div>
@@ -537,14 +538,34 @@ export default class BattleMenuScene extends Phaser.Scene {
         skillsOverlay.innerHTML = skillsHTML;
         document.body.appendChild(skillsOverlay);
         
+        // Set flag that skills overlay is open
+        this.skillsOverlayOpen = true;
+        
+        // Create close function
+        const closeSkillsOverlay = () => {
+            console.log('[BattleMenuScene] Closing skills overlay');
+            skillsOverlay.remove();
+            this.skillsOverlayOpen = false;
+            // Remove the DOM listener
+            document.removeEventListener('keydown', keydownHandler);
+            // Close this menu scene
+            this.closeMenu();
+        };
+        
+        // Add DOM-level keyboard listener (works even when Phaser input is paused)
+        const keydownHandler = (event) => {
+            console.log('[BattleMenuScene] Skills overlay key pressed:', event.key);
+            if (event.key === 'Escape' || event.key === '/') {
+                event.preventDefault();
+                closeSkillsOverlay();
+            }
+        };
+        document.addEventListener('keydown', keydownHandler);
+        
         // Add close button listener
         const closeBtn = document.getElementById('close-skills-btn');
         if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                skillsOverlay.remove();
-                // Resume the battle scene
-                this.battleScene.scene.resume();
-            });
+            closeBtn.addEventListener('click', closeSkillsOverlay);
         }
     }
 
