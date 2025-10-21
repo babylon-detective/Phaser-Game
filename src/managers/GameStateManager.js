@@ -4,25 +4,9 @@
  * Persists across all scenes
  */
 
-// Import managers for persistence (lazy loading to avoid circular dependencies)
-let moneyManager = null;
-let itemsManager = null;
-
-function getMoneyManager() {
-    if (!moneyManager) {
-        const { moneyManager: mm } = require('./MoneyManager.js');
-        moneyManager = mm;
-    }
-    return moneyManager;
-}
-
-function getItemsManager() {
-    if (!itemsManager) {
-        const { itemsManager: im } = require('./ItemsManager.js');
-        itemsManager = im;
-    }
-    return itemsManager;
-}
+// Import managers for persistence
+import { moneyManager } from './MoneyManager.js';
+import { itemsManager } from './ItemsManager.js';
 
 export default class GameStateManager {
     constructor() {
@@ -234,8 +218,8 @@ export default class GameStateManager {
         console.log('[GameStateManager] Player position to save:', playerPosition);
         
         // Get money and items data
-        const mm = getMoneyManager();
-        const im = getItemsManager();
+        const mm = moneyManager;
+        const im = itemsManager;
         
         const gameState = {
             playTime: this.getPlayTime(),
@@ -288,8 +272,8 @@ export default class GameStateManager {
             this.negotiationHistory = gameState.negotiationHistory || [];
             
             // Restore money and items
-            const mm = getMoneyManager();
-            const im = getItemsManager();
+            const mm = moneyManager;
+            const im = itemsManager;
             
             if (mm && gameState.money) {
                 mm.loadSaveData(gameState.money);
@@ -348,8 +332,8 @@ export default class GameStateManager {
         this.negotiationHistory = [];
         
         // Reset money and items
-        const mm = getMoneyManager();
-        const im = getItemsManager();
+        const mm = moneyManager;
+        const im = itemsManager;
         
         if (mm) mm.reset();
         if (im) im.reset();
