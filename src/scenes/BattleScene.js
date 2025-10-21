@@ -305,6 +305,10 @@ export default class BattleScene extends Phaser.Scene {
         // Add key press listeners
         this.attackListener = (event) => {
             if (event.key === ']') {
+                // Don't attack if we're in enemy selection mode
+                if (this.isEnemySelectionMode) {
+                    return;
+                }
                 console.log('[BattleScene] Right bracket detected!');
                 this.attack();
             }
@@ -313,6 +317,10 @@ export default class BattleScene extends Phaser.Scene {
 
         this.chargeStartListener = (event) => {
             if (event.key === '[' && !this.isKeyPressed) {
+                // Don't charge during enemy selection mode
+                if (this.isEnemySelectionMode) {
+                    return;
+                }
                 this.isKeyPressed = true;
                 this.chargeStartTime = this.time.now;
                 console.log('[BattleScene] Left bracket pressed, starting timer');
@@ -322,6 +330,10 @@ export default class BattleScene extends Phaser.Scene {
 
         this.chargeEndListener = (event) => {
             if (event.key === '[' && this.isKeyPressed) {
+                // Don't process charge release during enemy selection mode
+                if (this.isEnemySelectionMode) {
+                    return;
+                }
                 this.isKeyPressed = false;
                 const pressDuration = this.time.now - this.chargeStartTime;
                 console.log('[BattleScene] Left bracket released, duration:', pressDuration);
@@ -418,9 +430,9 @@ export default class BattleScene extends Phaser.Scene {
     startEnemySelection() {
         console.log('[BattleScene] Starting enemy selection mode');
         
-        // Pause the battle scene (already paused from menu)
-        // But keep it visible
-        this.scene.resume();
+        // Keep the battle scene PAUSED (already paused from menu)
+        // The scene is still visible when paused, but update() won't process battle logic
+        // because we check isEnemySelectionMode first
         
         // Initialize enemy selection state
         this.isEnemySelectionMode = true;
@@ -436,6 +448,10 @@ export default class BattleScene extends Phaser.Scene {
             highlight.setVisible(false);
             this.enemyHighlights.push(highlight);
         });
+        
+        // Resume the scene so update() can run (for enemy selection input)
+        // But battle logic is blocked by isEnemySelectionMode check
+        this.scene.resume();
         
         // Highlight the first enemy
         this.updateEnemyHighlight();
@@ -698,8 +714,8 @@ export default class BattleScene extends Phaser.Scene {
             gap: 10px;
         `;
         
-        // Add dialogue choices
-        dialogueOptions.choices.forEach((choice, index) => {
+        // Add dialogue choices (DialogueManager returns 'options', not 'choices')
+        dialogueOptions.options.forEach((choice, index) => {
             const button = document.createElement('button');
             button.style.cssText = `
                 background: linear-gradient(135deg, #2c3e50, #34495e);
