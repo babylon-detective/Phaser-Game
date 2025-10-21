@@ -136,6 +136,7 @@ export default class HUDManager {
             <div class="control-row"><kbd>]</kbd> Attack</div>
             <div class="control-row"><kbd>[</kbd> Special (Hold to Charge)</div>
             <div class="control-row"><kbd>Shift</kbd> Dash</div>
+            <div class="control-row"><kbd>/</kbd> Battle Menu (Talk/Items/Skills)</div>
             <div class="control-row"><kbd>ESC</kbd> Escape Battle</div>
         `;
     }

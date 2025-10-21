@@ -7,6 +7,7 @@
 // Import managers for persistence
 import { moneyManager } from './MoneyManager.js';
 import { itemsManager } from './ItemsManager.js';
+import { skillsManager } from './SkillsManager.js';
 
 export default class GameStateManager {
     constructor() {
@@ -217,9 +218,10 @@ export default class GameStateManager {
         console.log('[GameStateManager] ========== SAVING GAME ==========');
         console.log('[GameStateManager] Player position to save:', playerPosition);
         
-        // Get money and items data
+        // Get money, items, and skills data
         const mm = moneyManager;
         const im = itemsManager;
+        const sm = skillsManager;
         
         const gameState = {
             playTime: this.getPlayTime(),
@@ -231,6 +233,7 @@ export default class GameStateManager {
             playerPosition: playerPosition,
             money: mm ? mm.getSaveData() : { money: 100, transactionHistory: [] },
             items: im ? im.getSaveData() : { inventory: [] },
+            skills: sm ? sm.getSaveData() : { playerSkills: { unlocked: ['quick_strike'], equipped: ['quick_strike'], maxEquipped: 4, cooldowns: {} }, playerEnergy: { current: 100, max: 100, regenRate: 2 } },
             savedAt: new Date().toISOString()
         };
 
@@ -271,9 +274,10 @@ export default class GameStateManager {
             this.battleHistory = gameState.battleHistory || [];
             this.negotiationHistory = gameState.negotiationHistory || [];
             
-            // Restore money and items
+            // Restore money, items, and skills
             const mm = moneyManager;
             const im = itemsManager;
+            const sm = skillsManager;
             
             if (mm && gameState.money) {
                 mm.loadSaveData(gameState.money);
@@ -281,6 +285,10 @@ export default class GameStateManager {
             
             if (im && gameState.items) {
                 im.loadSaveData(gameState.items);
+            }
+            
+            if (sm && gameState.skills) {
+                sm.loadSaveData(gameState.skills);
             }
             
             console.log('[GameStateManager] ✅ State restored:');
@@ -331,12 +339,14 @@ export default class GameStateManager {
         this.battleHistory = [];
         this.negotiationHistory = [];
         
-        // Reset money and items
+        // Reset money, items, and skills
         const mm = moneyManager;
         const im = itemsManager;
+        const sm = skillsManager;
         
         if (mm) mm.reset();
         if (im) im.reset();
+        if (sm) sm.reset();
         
         localStorage.removeItem('gameState');
         console.log('[GameStateManager] Game state reset (including money and items)');

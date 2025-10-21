@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { gameStateManager } from "../managers/GameStateManager.js";
 import { dialogueManager } from "../managers/DialogueManager.js";
+import { skillsManager } from "../managers/SkillsManager.js";
 
 export default class BattleMenuScene extends Phaser.Scene {
     constructor() {
@@ -137,7 +138,7 @@ export default class BattleMenuScene extends Phaser.Scene {
         this.icons = [
             { id: 'talk', label: '💬', name: 'Talk', description: 'Negotiate with enemies' },
             { id: 'items', label: '🎒', name: 'Items', description: 'Use items' },
-            { id: 'macros', label: '⚡', name: 'Macros', description: 'Execute custom action combos' }
+            { id: 'skills', label: '⚡', name: 'Skills', description: 'View and manage combat skills' }
         ];
 
         // Create icon elements
@@ -240,8 +241,8 @@ export default class BattleMenuScene extends Phaser.Scene {
             case 'items':
                 this.showItemsNotImplemented();
                 break;
-            case 'macros':
-                this.showMacrosNotImplemented();
+            case 'skills':
+                this.showSkillsContent();
                 break;
         }
     }
@@ -444,8 +445,107 @@ export default class BattleMenuScene extends Phaser.Scene {
         alert('Items menu coming soon!');
     }
 
-    showMacrosNotImplemented() {
-        alert('Macros system coming soon! Create custom action combinations to execute complex strategies with a single button press.');
+    showSkillsContent() {
+        console.log('[BattleMenuScene] Showing skills content');
+        
+        // Close the menu temporarily
+        this.closeMenu();
+        
+        // Create skills overlay (similar to dialogue but for skills)
+        const skillsOverlay = document.createElement('div');
+        skillsOverlay.id = 'battle-skills-overlay';
+        skillsOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+        `;
+        
+        const unlockedSkills = skillsManager.getUnlockedSkills();
+        const equippedSkills = skillsManager.getEquippedSkills();
+        const energy = skillsManager.getEnergy();
+        
+        let skillsHTML = `
+            <div style="max-width: 600px; padding: 30px; background: linear-gradient(135deg, #1a1a2e, #16213e); border: 3px solid #FFD700; border-radius: 15px; color: white; font-family: Arial, sans-serif; max-height: 80vh; overflow-y: auto;">
+                <h2 style="color: #FFD700; margin: 0 0 20px 0; text-align: center;">⚡ COMBAT SKILLS</h2>
+                
+                <div style="margin-bottom: 20px; padding: 15px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="color: #AAA; font-size: 14px;">Energy</span>
+                        <span style="color: #FFD700; font-weight: bold;">${energy.current} / ${energy.max}</span>
+                    </div>
+                    <div style="background: #333; height: 10px; border-radius: 5px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, #FFD700, #FFA502); height: 100%; width: ${energy.percent * 100}%;"></div>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <h3 style="color: #4A90E2; margin: 0 0 10px 0;">Equipped Skills (${equippedSkills.length}/${skillsManager.playerSkills.maxEquipped})</h3>
+        `;
+        
+        if (equippedSkills.length === 0) {
+            skillsHTML += `<p style="text-align: center; color: #666; font-style: italic;">No skills equipped</p>`;
+        } else {
+            equippedSkills.forEach(skill => {
+                const isOnCooldown = skillsManager.isOnCooldown(skill.id);
+                const canUse = skillsManager.canUseSkill(skill.id);
+                const cooldownProgress = skillsManager.getCooldownProgress(skill.id);
+                
+                skillsHTML += `
+                    <div style="margin-bottom: 10px; padding: 12px; background: ${canUse ? 'rgba(74, 144, 226, 0.2)' : 'rgba(128, 128, 128, 0.1)'}; border: 2px solid ${canUse ? '#4A90E2' : '#666'}; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <div>
+                                <span style="font-size: 24px; margin-right: 8px;">${skill.icon}</span>
+                                <span style="color: ${canUse ? '#FFF' : '#888'}; font-weight: bold;">${skill.name}</span>
+                            </div>
+                            <div style="font-size: 12px; color: ${isOnCooldown ? '#FF4757' : '#00FF00'};">
+                                ${isOnCooldown ? `CD: ${(skillsManager.getCooldownRemaining(skill.id) / 1000).toFixed(1)}s` : 'READY'}
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #AAA; margin-bottom: 5px;">${skill.description}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                            <span style="color: #FFA502;">⚔️ ${skill.damage || 0} DMG</span>
+                            <span style="color: #FFD700;">⚡ ${skill.cost} Energy</span>
+                        </div>
+                        ${isOnCooldown ? `
+                            <div style="background: #333; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 5px;">
+                                <div style="background: #4A90E2; height: 100%; width: ${cooldownProgress * 100}%;"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+        }
+        
+        skillsHTML += `
+                </div>
+                
+                <div style="text-align: center; padding: 15px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; margin-top: 20px;">
+                    <p style="color: #AAA; font-size: 14px; margin: 0 0 10px 0;">Open the <span style="color: #FFD700;">Menu (/)</span> to manage all skills</p>
+                    <button id="close-skills-btn" style="background: #4A90E2; border: none; padding: 10px 30px; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer;">Close</button>
+                </div>
+            </div>
+        `;
+        
+        skillsOverlay.innerHTML = skillsHTML;
+        document.body.appendChild(skillsOverlay);
+        
+        // Add close button listener
+        const closeBtn = document.getElementById('close-skills-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                skillsOverlay.remove();
+                // Resume the battle scene
+                this.battleScene.scene.resume();
+            });
+        }
     }
 
     startTimerUpdate() {

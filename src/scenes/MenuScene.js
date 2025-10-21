@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { gameStateManager } from "../managers/GameStateManager.js";
 import { moneyManager } from "../managers/MoneyManager.js";
 import { itemsManager } from "../managers/ItemsManager.js";
+import { skillsManager } from "../managers/SkillsManager.js";
 
 export default class MenuScene extends Phaser.Scene {
     constructor() {
@@ -20,7 +21,7 @@ export default class MenuScene extends Phaser.Scene {
         console.log('[MenuScene] Player on save point:', this.isOnSavePoint);
         
         // Define tabs based on save point status
-        this.tabs = ['Player Stats', 'Inventory'];
+        this.tabs = ['Player Stats', 'Skills', 'Items'];
         if (this.isOnSavePoint) {
             this.tabs.push('Save Game');
         }
@@ -315,8 +316,10 @@ export default class MenuScene extends Phaser.Scene {
         
         if (currentTab === 'Player Stats') {
             this.showPlayerStatsContent();
-        } else if (currentTab === 'Inventory') {
-            this.showInventoryContent();
+        } else if (currentTab === 'Skills') {
+            this.showSkillsContent();
+        } else if (currentTab === 'Items') {
+            this.showItemsContent();
         } else if (currentTab === 'Save Game') {
             this.showSaveGameContent();
         }
@@ -372,14 +375,122 @@ export default class MenuScene extends Phaser.Scene {
         `;
     }
     
-    showInventoryContent() {
+    showSkillsContent() {
+        const unlockedSkills = skillsManager.getUnlockedSkills();
+        const equippedSkills = skillsManager.getEquippedSkills();
+        const playerStats = gameStateManager.getPlayerStats();
+        const energy = skillsManager.getEnergy();
+        
+        let skillsHTML = `
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #FFD700; border-bottom: 2px solid #FFD700; padding-bottom: 10px;">
+                SKILLS
+            </div>
+            
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px;">
+                <div style="color: #AAA; font-size: 12px; margin-bottom: 5px;">Energy</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                    <span style="color: #FFD700; font-weight: bold; font-size: 20px;">⚡ ${energy.current} / ${energy.max}</span>
+                    <span style="color: #AAA; font-size: 12px;">${Math.floor(energy.percent * 100)}%</span>
+                </div>
+                <div style="background: #333; height: 8px; border-radius: 4px; overflow: hidden;">
+                    <div style="background: linear-gradient(90deg, #FFD700, #FFA502); height: 100%; width: ${energy.percent * 100}%; transition: width 0.3s;"></div>
+                </div>
+            </div>
+            
+            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #4A90E2;">
+                Equipped Skills (${equippedSkills.length}/${skillsManager.playerSkills.maxEquipped})
+            </div>
+        `;
+        
+        if (equippedSkills.length === 0) {
+            skillsHTML += `
+                <div style="text-align: center; padding: 20px; color: #666; font-style: italic; margin-bottom: 20px;">
+                    No skills equipped
+                </div>
+            `;
+        } else {
+            equippedSkills.forEach(skill => {
+                const isOnCooldown = skillsManager.isOnCooldown(skill.id);
+                const cooldownProgress = skillsManager.getCooldownProgress(skill.id);
+                const canUse = skillsManager.canUseSkill(skill.id);
+                
+                skillsHTML += `
+                    <div style="margin-bottom: 10px; padding: 12px; background: ${canUse ? 'rgba(74, 144, 226, 0.2)' : 'rgba(128, 128, 128, 0.1)'}; border: 2px solid ${canUse ? '#4A90E2' : '#666'}; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <div>
+                                <span style="font-size: 24px; margin-right: 8px;">${skill.icon}</span>
+                                <span style="color: ${canUse ? '#FFF' : '#888'}; font-weight: bold;">${skill.name}</span>
+                            </div>
+                            <div style="font-size: 12px; color: ${isOnCooldown ? '#FF4757' : '#00FF00'};">
+                                ${isOnCooldown ? `CD: ${(skillsManager.getCooldownRemaining(skill.id) / 1000).toFixed(1)}s` : 'Ready'}
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #AAA; margin-bottom: 5px;">${skill.description}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                            <span style="color: #FFA502;">Damage: ${skill.damage || 'N/A'}</span>
+                            <span style="color: #FFD700;">Cost: ${skill.cost} energy</span>
+                        </div>
+                        ${isOnCooldown ? `
+                            <div style="background: #333; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 5px;">
+                                <div style="background: #4A90E2; height: 100%; width: ${cooldownProgress * 100}%; transition: width 0.1s;"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+        }
+        
+        skillsHTML += `
+            <div style="font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #00D9FF;">
+                Available Skills (${unlockedSkills.length})
+            </div>
+        `;
+        
+        const availableSkills = unlockedSkills.filter(s => !equippedSkills.find(e => e.id === s.id));
+        
+        if (availableSkills.length === 0) {
+            skillsHTML += `
+                <div style="text-align: center; padding: 20px; color: #666; font-style: italic;">
+                    All unlocked skills are equipped
+                </div>
+            `;
+        } else {
+            skillsHTML += `<div style="max-height: 200px; overflow-y: auto;">`;
+            availableSkills.forEach(skill => {
+                skillsHTML += `
+                    <div style="margin-bottom: 8px; padding: 10px; background: rgba(0, 217, 255, 0.05); border: 1px solid #00D9FF; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <div>
+                                <span style="font-size: 20px; margin-right: 8px;">${skill.icon}</span>
+                                <span style="color: #FFF; font-weight: bold;">${skill.name}</span>
+                            </div>
+                            <div style="font-size: 10px; color: #AAA;">Lvl ${skill.unlockLevel}</div>
+                        </div>
+                        <div style="font-size: 11px; color: #AAA;">${skill.description}</div>
+                    </div>
+                `;
+            });
+            skillsHTML += `</div>`;
+        }
+        
+        skillsHTML += `
+            <div style="margin-top: 20px; padding: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; font-size: 12px; color: #AAA;">
+                <div style="color: #FFD700; font-weight: bold; margin-bottom: 5px;">💡 Tip:</div>
+                New skills unlock as you level up!
+            </div>
+        `;
+        
+        this.contentPanel.innerHTML = skillsHTML;
+    }
+    
+    showItemsContent() {
         const inventory = itemsManager.getInventory();
         const money = moneyManager.getMoney();
         const totalValue = itemsManager.getInventoryValue();
         
         let inventoryHTML = `
             <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #00D9FF; border-bottom: 2px solid #00D9FF; padding-bottom: 10px;">
-                INVENTORY
+                ITEMS
             </div>
             
             <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px; display: flex; justify-content: space-between;">
