@@ -415,6 +415,640 @@ export default class BattleScene extends Phaser.Scene {
         });
     }
 
+    startEnemySelection() {
+        console.log('[BattleScene] Starting enemy selection mode');
+        
+        // Pause the battle scene (already paused from menu)
+        // But keep it visible
+        this.scene.resume();
+        
+        // Initialize enemy selection state
+        this.isEnemySelectionMode = true;
+        this.selectedEnemyIndex = 0;
+        this.enemyHighlights = [];
+        
+        // Create highlights for all enemies
+        this.enemies.forEach((enemy, index) => {
+            const highlight = this.add.graphics();
+            highlight.lineStyle(4, 0xffff00, 1);
+            highlight.strokeCircle(0, 0, enemy.width * 0.6);
+            highlight.setDepth(1000);
+            highlight.setVisible(false);
+            this.enemyHighlights.push(highlight);
+        });
+        
+        // Highlight the first enemy
+        this.updateEnemyHighlight();
+        
+        // Create DOM overlay for instructions
+        this.createEnemySelectionUI();
+        
+        // Set up input for enemy selection
+        this.setupEnemySelectionInput();
+    }
+    
+    updateEnemyHighlight() {
+        // Hide all highlights
+        this.enemyHighlights.forEach(h => h.setVisible(false));
+        
+        // Show highlight for selected enemy
+        if (this.enemies[this.selectedEnemyIndex]) {
+            const enemy = this.enemies[this.selectedEnemyIndex];
+            const highlight = this.enemyHighlights[this.selectedEnemyIndex];
+            
+            // Position highlight on enemy
+            highlight.setPosition(enemy.x, enemy.y);
+            highlight.setVisible(true);
+            
+            // Add pulsing animation
+            this.tweens.add({
+                targets: highlight,
+                scaleX: 1.2,
+                scaleY: 1.2,
+                alpha: 0.7,
+                duration: 500,
+                yoyo: true,
+                repeat: -1
+            });
+            
+            console.log(`[BattleScene] Highlighting enemy ${this.selectedEnemyIndex}:`, enemy.enemyData.type);
+        }
+    }
+    
+    createEnemySelectionUI() {
+        const overlay = document.createElement('div');
+        overlay.id = 'enemy-selection-ui';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid gold;
+            border-radius: 10px;
+            padding: 15px 30px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 18px;
+            text-align: center;
+            z-index: 10000;
+            pointer-events: none;
+        `;
+        
+        const selectedEnemy = this.enemies[this.selectedEnemyIndex];
+        overlay.innerHTML = `
+            <div style="margin-bottom: 10px; color: gold; font-weight: bold;">
+                SELECT ENEMY TO TALK TO
+            </div>
+            <div style="margin-bottom: 10px;">
+                ${selectedEnemy.enemyData.type} - Level ${selectedEnemy.enemyData.level}
+            </div>
+            <div style="font-size: 14px; color: #aaa;">
+                A/D - Switch Enemy | ] - Confirm | ESC - Cancel
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+    }
+    
+    updateEnemySelectionUI() {
+        const overlay = document.getElementById('enemy-selection-ui');
+        if (overlay && this.enemies[this.selectedEnemyIndex]) {
+            const selectedEnemy = this.enemies[this.selectedEnemyIndex];
+            overlay.innerHTML = `
+                <div style="margin-bottom: 10px; color: gold; font-weight: bold;">
+                    SELECT ENEMY TO TALK TO
+                </div>
+                <div style="margin-bottom: 10px;">
+                    ${selectedEnemy.enemyData.type} - Level ${selectedEnemy.enemyData.level}
+                </div>
+                <div style="font-size: 14px; color: #aaa;">
+                    A/D - Switch Enemy | ] - Confirm | ESC - Cancel
+                </div>
+            `;
+        }
+    }
+    
+    setupEnemySelectionInput() {
+        // Create key objects for navigation
+        this.enemySelectionKeys = {
+            a: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+            d: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+            confirm: this.input.keyboard.addKey(221), // ] key
+            cancel: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+        };
+    }
+    
+    updateEnemySelection() {
+        if (!this.isEnemySelectionMode) return;
+        
+        const keys = this.enemySelectionKeys;
+        
+        // Navigate left (A)
+        if (Phaser.Input.Keyboard.JustDown(keys.a)) {
+            this.selectedEnemyIndex--;
+            if (this.selectedEnemyIndex < 0) {
+                this.selectedEnemyIndex = this.enemies.length - 1;
+            }
+            this.updateEnemyHighlight();
+            this.updateEnemySelectionUI();
+        }
+        
+        // Navigate right (D)
+        if (Phaser.Input.Keyboard.JustDown(keys.d)) {
+            this.selectedEnemyIndex++;
+            if (this.selectedEnemyIndex >= this.enemies.length) {
+                this.selectedEnemyIndex = 0;
+            }
+            this.updateEnemyHighlight();
+            this.updateEnemySelectionUI();
+        }
+        
+        // Confirm selection (])
+        if (Phaser.Input.Keyboard.JustDown(keys.confirm)) {
+            this.confirmEnemySelection();
+        }
+        
+        // Cancel (ESC)
+        if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
+            this.cancelEnemySelection();
+        }
+    }
+    
+    confirmEnemySelection() {
+        console.log('[BattleScene] Enemy selection confirmed:', this.selectedEnemyIndex);
+        
+        const selectedEnemy = this.enemies[this.selectedEnemyIndex];
+        
+        // Clean up enemy selection mode
+        this.cleanupEnemySelection();
+        
+        // Start dialogue with selected enemy
+        this.startDialogueWithEnemy(selectedEnemy);
+    }
+    
+    cancelEnemySelection() {
+        console.log('[BattleScene] Enemy selection cancelled');
+        
+        // Clean up enemy selection mode
+        this.cleanupEnemySelection();
+        
+        // Resume battle normally
+        this.scene.resume();
+    }
+    
+    cleanupEnemySelection() {
+        // Remove highlights
+        if (this.enemyHighlights) {
+            this.enemyHighlights.forEach(h => {
+                this.tweens.killTweensOf(h);
+                h.destroy();
+            });
+            this.enemyHighlights = [];
+        }
+        
+        // Remove UI overlay
+        const overlay = document.getElementById('enemy-selection-ui');
+        if (overlay) {
+            overlay.remove();
+        }
+        
+        // Clean up input keys
+        if (this.enemySelectionKeys) {
+            Object.values(this.enemySelectionKeys).forEach(key => {
+                if (key) key.destroy();
+            });
+            this.enemySelectionKeys = null;
+        }
+        
+        // Reset state
+        this.isEnemySelectionMode = false;
+        this.selectedEnemyIndex = 0;
+    }
+    
+    startDialogueWithEnemy(enemy) {
+        console.log('[BattleScene] Starting dialogue with enemy:', enemy.enemyData);
+        
+        // Pause the battle scene
+        this.scene.pause();
+        
+        // Launch dialogue manager with enemy data
+        const npcData = {
+            id: enemy.enemyData.id,
+            type: enemy.enemyData.type,
+            level: enemy.enemyData.level,
+            health: enemy.enemyData.health,
+            maxHealth: enemy.enemyData.maxHealth
+        };
+        
+        // Create dialogue overlay (using existing dialogue system)
+        this.showDialogueForEnemy(npcData);
+    }
+    
+    showDialogueForEnemy(npcData) {
+        // Get dialogue options from DialogueManager
+        const dialogueOptions = dialogueManager.getDialogueOptions(npcData);
+        
+        console.log('[BattleScene] Dialogue options:', dialogueOptions);
+        
+        // Create dialogue overlay DOM
+        const dialogueOverlay = document.createElement('div');
+        dialogueOverlay.id = 'dialogue-overlay';
+        dialogueOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            pointer-events: auto;
+        `;
+        
+        const dialogueBox = document.createElement('div');
+        dialogueBox.style.cssText = `
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border: 3px solid gold;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 600px;
+            color: white;
+            font-family: Arial, sans-serif;
+        `;
+        
+        dialogueBox.innerHTML = `
+            <h2 style="color: gold; margin: 0 0 20px 0; text-align: center;">
+                ${npcData.type} (Level ${npcData.level})
+            </h2>
+            <p style="margin-bottom: 30px; font-size: 16px; line-height: 1.5;">
+                ${dialogueOptions.greeting}
+            </p>
+            <div id="dialogue-choices"></div>
+        `;
+        
+        const choicesContainer = document.createElement('div');
+        choicesContainer.id = 'dialogue-choices';
+        choicesContainer.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        `;
+        
+        // Add dialogue choices
+        dialogueOptions.choices.forEach((choice, index) => {
+            const button = document.createElement('button');
+            button.style.cssText = `
+                background: linear-gradient(135deg, #2c3e50, #34495e);
+                border: 2px solid ${choice.available ? '#3498db' : '#555'};
+                border-radius: 8px;
+                padding: 15px;
+                color: ${choice.available ? 'white' : '#888'};
+                font-size: 16px;
+                cursor: ${choice.available ? 'pointer' : 'not-allowed'};
+                transition: all 0.3s;
+                text-align: left;
+            `;
+            
+            button.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 5px;">${choice.text}</div>
+                ${choice.cost ? `<div style="font-size: 14px; color: #f39c12;">Cost: ${choice.cost} gold</div>` : ''}
+                ${!choice.available ? `<div style="font-size: 12px; color: #e74c3c;">${choice.reason}</div>` : ''}
+            `;
+            
+            if (choice.available) {
+                button.addEventListener('mouseenter', () => {
+                    button.style.border = '2px solid gold';
+                    button.style.transform = 'translateX(10px)';
+                });
+                button.addEventListener('mouseleave', () => {
+                    button.style.border = '2px solid #3498db';
+                    button.style.transform = 'translateX(0)';
+                });
+                button.addEventListener('click', () => {
+                    this.handleDialogueChoice(choice.id, choice, npcData);
+                });
+            }
+            
+            choicesContainer.appendChild(button);
+        });
+        
+        dialogueBox.querySelector('#dialogue-choices').replaceWith(choicesContainer);
+        dialogueOverlay.appendChild(dialogueBox);
+        document.body.appendChild(dialogueOverlay);
+    }
+    
+    handleDialogueChoice(choiceId, optionData, npcData) {
+        console.log('[BattleScene] Dialogue choice:', choiceId, optionData);
+        
+        // Remove dialogue overlay
+        const dialogueOverlay = document.getElementById('dialogue-overlay');
+        if (dialogueOverlay) {
+            dialogueOverlay.remove();
+        }
+        
+        // Handle the choice
+        switch (choiceId) {
+            case 'fight':
+                // Resume battle
+                this.scene.resume();
+                break;
+                
+            case 'negotiate_money':
+                this.handleMoneyNegotiation(optionData.cost, npcData);
+                break;
+                
+            case 'negotiate_item':
+                this.showItemSelectionDialog(optionData.availableItems, optionData.requiredValue, npcData);
+                break;
+                
+            case 'flee':
+                this.handleFleeAttempt(npcData);
+                break;
+        }
+    }
+    
+    handleMoneyNegotiation(cost, npcData) {
+        const result = dialogueManager.negotiateWithMoney(npcData, cost);
+        console.log('[BattleScene] Money negotiation result:', result);
+        
+        this.showNegotiationResult(result, npcData);
+    }
+    
+    showItemSelectionDialog(availableItems, requiredValue, npcData) {
+        // Create item selection dialog
+        const itemDialog = document.createElement('div');
+        itemDialog.id = 'item-selection-dialog';
+        itemDialog.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+        `;
+        
+        const dialogBox = document.createElement('div');
+        dialogBox.style.cssText = `
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border: 3px solid gold;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            color: white;
+            font-family: Arial, sans-serif;
+        `;
+        
+        dialogBox.innerHTML = `
+            <h3 style="color: gold; margin: 0 0 20px 0;">Select Item to Gift</h3>
+            <p style="margin-bottom: 20px; font-size: 14px;">
+                Required value: ${requiredValue} gold
+            </p>
+            <div id="item-list"></div>
+        `;
+        
+        const itemList = document.createElement('div');
+        itemList.id = 'item-list';
+        itemList.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
+        
+        availableItems.forEach(item => {
+            const itemButton = document.createElement('button');
+            itemButton.style.cssText = `
+                background: linear-gradient(135deg, #2c3e50, #34495e);
+                border: 2px solid #3498db;
+                border-radius: 8px;
+                padding: 10px;
+                color: white;
+                cursor: pointer;
+                text-align: left;
+                transition: all 0.3s;
+            `;
+            
+            itemButton.innerHTML = `
+                <div style="font-weight: bold;">${item.name}</div>
+                <div style="font-size: 14px; color: #f39c12;">Value: ${item.value} gold</div>
+            `;
+            
+            itemButton.addEventListener('mouseenter', () => {
+                itemButton.style.border = '2px solid gold';
+            });
+            itemButton.addEventListener('mouseleave', () => {
+                itemButton.style.border = '2px solid #3498db';
+            });
+            itemButton.addEventListener('click', () => {
+                this.handleItemNegotiation(item.id, npcData);
+            });
+            
+            itemList.appendChild(itemButton);
+        });
+        
+        // Add cancel button
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'Cancel';
+        cancelButton.style.cssText = `
+            background: #e74c3c;
+            border: none;
+            border-radius: 8px;
+            padding: 10px;
+            color: white;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+        `;
+        cancelButton.addEventListener('click', () => {
+            itemDialog.remove();
+            this.scene.resume();
+        });
+        
+        dialogBox.querySelector('#item-list').replaceWith(itemList);
+        dialogBox.appendChild(cancelButton);
+        itemDialog.appendChild(dialogBox);
+        document.body.appendChild(itemDialog);
+    }
+    
+    handleItemNegotiation(itemId, npcData) {
+        const result = dialogueManager.negotiateWithItem(npcData, itemId);
+        console.log('[BattleScene] Item negotiation result:', result);
+        
+        // Remove item dialog
+        const itemDialog = document.getElementById('item-selection-dialog');
+        if (itemDialog) {
+            itemDialog.remove();
+        }
+        
+        this.showNegotiationResult(result, npcData);
+    }
+    
+    handleFleeAttempt(npcData) {
+        const result = dialogueManager.attemptFlee(npcData);
+        console.log('[BattleScene] Flee attempt result:', result);
+        
+        this.showFleeResult(result, () => {
+            if (result.success) {
+                this.returnToWorld();
+            } else {
+                this.scene.resume();
+            }
+        });
+    }
+    
+    showNegotiationResult(result, npcData) {
+        const resultOverlay = document.createElement('div');
+        resultOverlay.id = 'negotiation-result';
+        resultOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10002;
+        `;
+        
+        const resultBox = document.createElement('div');
+        resultBox.style.cssText = `
+            background: linear-gradient(135deg, ${result.success ? '#27ae60' : '#c0392b'}, #2c3e50);
+            border: 3px solid ${result.success ? '#2ecc71' : '#e74c3c'};
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 400px;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        `;
+        
+        resultBox.innerHTML = `
+            <h2 style="color: white; margin: 0 0 20px 0;">
+                ${result.success ? '✓ Success!' : '✗ Failed'}
+            </h2>
+            <p style="margin-bottom: 20px; font-size: 16px;">
+                ${result.message}
+            </p>
+            ${result.xpGained ? `<p style="color: cyan; font-size: 14px;">+${result.xpGained} XP</p>` : ''}
+            <button id="result-continue" style="
+                background: white;
+                color: #2c3e50;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 30px;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 20px;
+            ">Continue</button>
+        `;
+        
+        resultOverlay.appendChild(resultBox);
+        document.body.appendChild(resultOverlay);
+        
+        document.getElementById('result-continue').addEventListener('click', () => {
+            resultOverlay.remove();
+            
+            if (result.success) {
+                // Mark enemy as defeated through negotiation
+                this.handleNegotiationVictory(npcData);
+            } else {
+                // Resume battle
+                this.scene.resume();
+            }
+        });
+    }
+    
+    showFleeResult(result, onComplete) {
+        const resultOverlay = document.createElement('div');
+        resultOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10002;
+        `;
+        
+        const resultBox = document.createElement('div');
+        resultBox.style.cssText = `
+            background: linear-gradient(135deg, ${result.success ? '#f39c12' : '#c0392b'}, #2c3e50);
+            border: 3px solid ${result.success ? '#f1c40f' : '#e74c3c'};
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 400px;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        `;
+        
+        resultBox.innerHTML = `
+            <h2 style="color: white; margin: 0 0 20px 0;">
+                ${result.success ? '✓ Escaped!' : '✗ Failed to Escape'}
+            </h2>
+            <p style="margin-bottom: 20px; font-size: 16px;">
+                ${result.message}
+            </p>
+            <button id="flee-continue" style="
+                background: white;
+                color: #2c3e50;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 30px;
+                font-size: 16px;
+                cursor: pointer;
+            ">Continue</button>
+        `;
+        
+        resultOverlay.appendChild(resultBox);
+        document.body.appendChild(resultOverlay);
+        
+        document.getElementById('flee-continue').addEventListener('click', () => {
+            resultOverlay.remove();
+            if (onComplete) onComplete();
+        });
+    }
+    
+    handleNegotiationVictory(npcData) {
+        console.log('[BattleScene] Negotiation victory with:', npcData.id);
+        
+        // Find the enemy in the enemies array and mark as defeated
+        const enemyIndex = this.enemies.findIndex(e => e.enemyData.id === npcData.id);
+        if (enemyIndex !== -1) {
+            const enemy = this.enemies[enemyIndex];
+            
+            // Track as defeated
+            if (!this.defeatedEnemyIds.includes(npcData.id)) {
+                this.defeatedEnemyIds.push(npcData.id);
+                this.defeatedEnemiesData.push({
+                    level: npcData.level,
+                    type: npcData.type
+                });
+            }
+            
+            // Remove enemy from scene
+            enemy.destroy();
+            this.enemies.splice(enemyIndex, 1);
+            
+            console.log('[BattleScene] Enemy removed, remaining:', this.enemies.length);
+        }
+        
+        // Check if all enemies defeated
+        if (this.enemies.length === 0) {
+            this.showVictorySequence();
+        } else {
+            this.scene.resume();
+        }
+    }
+
     returnToWorld() {
         if (this.isReturning) return;
         this.isReturning = true;
@@ -458,6 +1092,12 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     update() {
+        // Handle enemy selection mode first (separate from normal battle update)
+        if (this.isEnemySelectionMode) {
+            this.updateEnemySelection();
+            return; // Don't process battle logic during enemy selection
+        }
+        
         if (!this.player || this.enemies.length === 0) return;
 
         // Check for escape key

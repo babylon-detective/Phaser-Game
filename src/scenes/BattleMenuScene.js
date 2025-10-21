@@ -252,8 +252,18 @@ export default class BattleMenuScene extends Phaser.Scene {
         // Close this menu
         this.closeMenu();
         
-        // Show enemy selection dialog (reuse dialogue system but from menu)
-        this.showEnemySelection();
+        // Start enemy selection mode in BattleScene
+        this.startEnemySelectionMode();
+    }
+    
+    startEnemySelectionMode() {
+        console.log('[BattleMenuScene] Starting enemy selection mode');
+        
+        // Launch enemy selection in BattleScene with highlighting
+        this.battleScene.startEnemySelection();
+        
+        // Stop this scene
+        this.scene.stop();
     }
 
     showEnemySelection() {
