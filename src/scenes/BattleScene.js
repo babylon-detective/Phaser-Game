@@ -2,6 +2,9 @@ import Phaser from "phaser";
 import HUDManager from "../ui/HUDManager";
 import { gameStateManager } from "../managers/GameStateManager.js";
 import { statsManager } from "../managers/StatsManager.js";
+import { dialogueManager } from "../managers/DialogueManager.js";
+import { moneyManager } from "../managers/MoneyManager.js";
+import { itemsManager } from "../managers/ItemsManager.js";
 
 export default class BattleScene extends Phaser.Scene {
     constructor() {
@@ -58,6 +61,10 @@ export default class BattleScene extends Phaser.Scene {
         this.defeatedEnemyIds = []; // Track defeated enemy IDs during battle
         this.totalXpEarned = 0; // Track total XP earned this battle
         this.defeatedEnemiesData = []; // Store defeated enemy data for XP calculation
+        // Dialogue system properties
+        this.dialogueOverlay = null;
+        this.dialogueChoice = null; // 'fight', 'negotiate_money', 'negotiate_item', 'flee'
+        this.isDialogueActive = false;
     }
 
     init(data) {
@@ -117,7 +124,8 @@ export default class BattleScene extends Phaser.Scene {
             ease: 'Power2',
             onComplete: () => {
                 blackScreen.destroy();
-                this.setupBattle();
+                // Show dialogue options first
+                this.showDialogueOptions();
             }
         });
     }
@@ -1049,6 +1057,503 @@ export default class BattleScene extends Phaser.Scene {
         
         // Call parent shutdown
         super.shutdown();
+    }
+
+    /**
+     * ====================================================================
+     * DIALOGUE SYSTEM METHODS
+     * ====================================================================
+     */
+
+    showDialogueOptions() {
+        console.log('[BattleScene] Showing dialogue options');
+        this.isDialogueActive = true;
+        
+        // Get dialogue data for the first NPC (leader of the group)
+        const leadNpc = this.npcDataArray[0];
+        const dialogueData = dialogueManager.getDialogueOptions(leadNpc);
+        
+        console.log('[BattleScene] Dialogue data:', dialogueData);
+        
+        // Create DOM overlay for dialogue
+        this.dialogueOverlay = document.createElement('div');
+        this.dialogueOverlay.id = 'battle-dialogue-overlay';
+        this.dialogueOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, rgba(20, 20, 40, 0.95), rgba(40, 20, 60, 0.95));
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            animation: fadeIn 0.5s ease-in;
+        `;
+        
+        // Create dialogue content
+        const content = document.createElement('div');
+        content.style.cssText = `
+            max-width: 600px;
+            padding: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 3px solid #FFD700;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+        `;
+        
+        // NPC greeting
+        const greeting = document.createElement('div');
+        greeting.style.cssText = `
+            font-size: 24px;
+            color: #FFF;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        `;
+        greeting.innerHTML = `
+            <div style="font-size: 32px; color: #FFD700; margin-bottom: 10px;">
+                ${leadNpc.type}
+            </div>
+            <div style="font-size: 18px; font-style: italic; color: #AAA;">
+                "${dialogueData.greeting}"
+            </div>
+        `;
+        content.appendChild(greeting);
+        
+        // Money display
+        const moneyDisplay = document.createElement('div');
+        moneyDisplay.style.cssText = `
+            font-size: 18px;
+            color: #FFD700;
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255, 215, 0, 0.1);
+            border-radius: 5px;
+        `;
+        moneyDisplay.textContent = `💰 Your Gold: ${moneyManager.getMoney()}`;
+        content.appendChild(moneyDisplay);
+        
+        // Options container
+        const optionsContainer = document.createElement('div');
+        optionsContainer.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        `;
+        
+        // Create buttons for each option
+        dialogueData.options.forEach((option, index) => {
+            const button = document.createElement('button');
+            button.style.cssText = `
+                padding: 15px 20px;
+                font-size: 18px;
+                font-weight: bold;
+                color: ${this.getOptionColor(option.id)};
+                background: rgba(0, 0, 0, 0.8);
+                border: 2px solid ${this.getOptionColor(option.id)};
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-align: left;
+            `;
+            
+            // Check if option is disabled
+            const isDisabled = (option.id === 'negotiate_money' && !option.canAfford) ||
+                             (option.id === 'negotiate_item' && option.availableItems.length === 0);
+            
+            if (isDisabled) {
+                button.style.opacity = '0.5';
+                button.style.cursor = 'not-allowed';
+                button.disabled = true;
+            }
+            
+            let buttonText = `${option.text}`;
+            if (option.description) {
+                buttonText += `<br><span style="font-size: 14px; font-style: italic;">${option.description}</span>`;
+            }
+            
+            if (option.id === 'negotiate_money' && !option.canAfford) {
+                buttonText += `<br><span style="font-size: 14px; color: #FF4444;">Insufficient funds!</span>`;
+            }
+            
+            if (option.id === 'negotiate_item' && option.availableItems.length === 0) {
+                buttonText += `<br><span style="font-size: 14px; color: #FF4444;">No suitable items!</span>`;
+            }
+            
+            button.innerHTML = buttonText;
+            
+            // Hover effects
+            if (!isDisabled) {
+                button.addEventListener('mouseenter', () => {
+                    button.style.background = this.getOptionColor(option.id);
+                    button.style.color = '#000';
+                    button.style.transform = 'scale(1.05)';
+                });
+                button.addEventListener('mouseleave', () => {
+                    button.style.background = 'rgba(0, 0, 0, 0.8)';
+                    button.style.color = this.getOptionColor(option.id);
+                    button.style.transform = 'scale(1)';
+                });
+                
+                button.addEventListener('click', () => {
+                    this.handleDialogueChoice(option.id, option);
+                });
+            }
+            
+            optionsContainer.appendChild(button);
+        });
+        
+        content.appendChild(optionsContainer);
+        this.dialogueOverlay.appendChild(content);
+        document.body.appendChild(this.dialogueOverlay);
+    }
+    
+    getOptionColor(optionId) {
+        const colors = {
+            'fight': '#FF4444',
+            'negotiate_money': '#FFD700',
+            'negotiate_item': '#00D9FF',
+            'flee': '#888888'
+        };
+        return colors[optionId] || '#FFFFFF';
+    }
+    
+    handleDialogueChoice(choiceId, optionData) {
+        console.log('[BattleScene] Player chose:', choiceId);
+        this.dialogueChoice = choiceId;
+        
+        // Remove dialogue overlay
+        if (this.dialogueOverlay) {
+            this.dialogueOverlay.remove();
+            this.dialogueOverlay = null;
+        }
+        
+        this.isDialogueActive = false;
+        
+        // Handle the choice
+        switch (choiceId) {
+            case 'fight':
+                // Proceed to battle
+                this.setupBattle();
+                break;
+                
+            case 'negotiate_money':
+                this.handleMoneyNegotiation(optionData.cost);
+                break;
+                
+            case 'negotiate_item':
+                this.showItemSelectionDialog(optionData.availableItems, optionData.requiredValue);
+                break;
+                
+            case 'flee':
+                this.handleFleeAttempt();
+                break;
+        }
+    }
+    
+    handleMoneyNegotiation(cost) {
+        const leadNpc = this.npcDataArray[0];
+        const result = dialogueManager.negotiateWithMoney(leadNpc, cost);
+        
+        console.log('[BattleScene] Money negotiation result:', result);
+        
+        this.showNegotiationResult(result);
+    }
+    
+    showItemSelectionDialog(availableItems, requiredValue) {
+        console.log('[BattleScene] Showing item selection dialog');
+        
+        // Create item selection overlay
+        const itemOverlay = document.createElement('div');
+        itemOverlay.id = 'item-selection-overlay';
+        itemOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            max-width: 500px;
+            padding: 20px;
+            background: rgba(20, 20, 40, 0.95);
+            border: 2px solid #00D9FF;
+            border-radius: 10px;
+        `;
+        
+        const title = document.createElement('div');
+        title.style.cssText = `
+            font-size: 24px;
+            color: #00D9FF;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+        `;
+        title.textContent = `Select Item to Gift (Min Value: ${requiredValue})`;
+        content.appendChild(title);
+        
+        // Item list
+        const itemList = document.createElement('div');
+        itemList.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        `;
+        
+        availableItems.forEach(item => {
+            const itemButton = document.createElement('button');
+            itemButton.style.cssText = `
+                padding: 12px;
+                background: rgba(0, 217, 255, 0.1);
+                border: 1px solid #00D9FF;
+                border-radius: 5px;
+                color: #FFF;
+                cursor: pointer;
+                text-align: left;
+                transition: all 0.3s ease;
+            `;
+            
+            itemButton.innerHTML = `
+                <div style="font-weight: bold;">${item.name} (Value: ${item.value})</div>
+                <div style="font-size: 14px; color: #AAA;">Quantity: ${item.quantity}</div>
+            `;
+            
+            itemButton.addEventListener('mouseenter', () => {
+                itemButton.style.background = '#00D9FF';
+                itemButton.style.color = '#000';
+            });
+            itemButton.addEventListener('mouseleave', () => {
+                itemButton.style.background = 'rgba(0, 217, 255, 0.1)';
+                itemButton.style.color = '#FFF';
+            });
+            
+            itemButton.addEventListener('click', () => {
+                itemOverlay.remove();
+                this.handleItemNegotiation(item.id);
+            });
+            
+            itemList.appendChild(itemButton);
+        });
+        
+        content.appendChild(itemList);
+        
+        // Cancel button
+        const cancelButton = document.createElement('button');
+        cancelButton.style.cssText = `
+            margin-top: 15px;
+            padding: 10px;
+            background: #444;
+            border: 1px solid #888;
+            border-radius: 5px;
+            color: #FFF;
+            cursor: pointer;
+            width: 100%;
+        `;
+        cancelButton.textContent = 'Cancel (Fight Instead)';
+        cancelButton.addEventListener('click', () => {
+            itemOverlay.remove();
+            this.setupBattle();
+        });
+        content.appendChild(cancelButton);
+        
+        itemOverlay.appendChild(content);
+        document.body.appendChild(itemOverlay);
+    }
+    
+    handleItemNegotiation(itemId) {
+        const leadNpc = this.npcDataArray[0];
+        const result = dialogueManager.negotiateWithItem(leadNpc, itemId);
+        
+        console.log('[BattleScene] Item negotiation result:', result);
+        
+        this.showNegotiationResult(result);
+    }
+    
+    handleFleeAttempt() {
+        const leadNpc = this.npcDataArray[0];
+        const result = dialogueManager.attemptFlee(leadNpc);
+        
+        console.log('[BattleScene] Flee attempt result:', result);
+        
+        if (result.success) {
+            // Successfully fled
+            this.showFleeResult(result);
+        } else {
+            // Failed to flee, must fight
+            this.showFleeResult(result, () => {
+                this.setupBattle();
+            });
+        }
+    }
+    
+    showNegotiationResult(result) {
+        // Create result overlay
+        const resultOverlay = document.createElement('div');
+        resultOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10002;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            max-width: 500px;
+            padding: 30px;
+            background: ${result.success ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 0, 0, 0.1)'};
+            border: 3px solid ${result.success ? '#00FF00' : '#FF4444'};
+            border-radius: 15px;
+            text-align: center;
+        `;
+        
+        const title = document.createElement('div');
+        title.style.cssText = `
+            font-size: 32px;
+            font-weight: bold;
+            color: ${result.success ? '#00FF00' : '#FF4444'};
+            margin-bottom: 20px;
+        `;
+        title.textContent = result.success ? '✓ Success!' : '✗ Failed';
+        content.appendChild(title);
+        
+        const message = document.createElement('div');
+        message.style.cssText = `
+            font-size: 18px;
+            color: #FFF;
+            margin-bottom: 20px;
+        `;
+        message.textContent = result.message;
+        content.appendChild(message);
+        
+        if (result.success && result.xpGained) {
+            const xpDisplay = document.createElement('div');
+            xpDisplay.style.cssText = `
+                font-size: 20px;
+                color: #00D9FF;
+                margin: 15px 0;
+            `;
+            xpDisplay.textContent = `+${result.xpGained} XP earned`;
+            content.appendChild(xpDisplay);
+            
+            if (result.leveledUp) {
+                const levelUp = document.createElement('div');
+                levelUp.style.cssText = `
+                    font-size: 24px;
+                    color: #FFD700;
+                    font-weight: bold;
+                `;
+                levelUp.textContent = `🎉 Level Up! Now Level ${result.newLevel}`;
+                content.appendChild(levelUp);
+            }
+        }
+        
+        resultOverlay.appendChild(content);
+        document.body.appendChild(resultOverlay);
+        
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+            resultOverlay.remove();
+            if (result.success) {
+                // Return to world
+                this.handleNegotiationVictory();
+            } else {
+                // Must fight
+                this.setupBattle();
+            }
+        }, 3000);
+    }
+    
+    showFleeResult(result, onComplete = null) {
+        const resultOverlay = document.createElement('div');
+        resultOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10002;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            max-width: 400px;
+            padding: 30px;
+            background: ${result.success ? 'rgba(0, 217, 255, 0.1)' : 'rgba(255, 68, 68, 0.1)'};
+            border: 3px solid ${result.success ? '#00D9FF' : '#FF4444'};
+            border-radius: 15px;
+            text-align: center;
+        `;
+        
+        const message = document.createElement('div');
+        message.style.cssText = `
+            font-size: 24px;
+            color: ${result.success ? '#00D9FF' : '#FF4444'};
+            font-weight: bold;
+        `;
+        message.textContent = result.message;
+        content.appendChild(message);
+        
+        resultOverlay.appendChild(content);
+        document.body.appendChild(resultOverlay);
+        
+        setTimeout(() => {
+            resultOverlay.remove();
+            if (result.success) {
+                this.returnToWorld();
+            } else if (onComplete) {
+                onComplete();
+            }
+        }, 2000);
+    }
+    
+    handleNegotiationVictory() {
+        console.log('[BattleScene] Negotiation successful, returning to world');
+        
+        // Mark NPCs as defeated (negotiated away)
+        this.defeatedEnemyIds = this.npcDataArray.map(npc => npc.id);
+        
+        const transitionData = {
+            battleVictory: true,
+            returnPosition: this.worldPosition,
+            defeatedNpcIds: this.defeatedEnemyIds,
+            transitionType: 'negotiation'
+        };
+        
+        console.log('[BattleScene] Negotiation victory transition data:', transitionData);
+        
+        // Clean up and return
+        this.cleanup();
+        this.scene.resume('WorldScene', transitionData);
+        this.scene.stop();
     }
 
     animateXpCounter(xpText, totalXp) {

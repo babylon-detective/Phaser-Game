@@ -3,6 +3,27 @@
  * Tracks universal gameplay time, player stats, NPC states
  * Persists across all scenes
  */
+
+// Import managers for persistence (lazy loading to avoid circular dependencies)
+let moneyManager = null;
+let itemsManager = null;
+
+function getMoneyManager() {
+    if (!moneyManager) {
+        const { moneyManager: mm } = require('./MoneyManager.js');
+        moneyManager = mm;
+    }
+    return moneyManager;
+}
+
+function getItemsManager() {
+    if (!itemsManager) {
+        const { itemsManager: im } = require('./ItemsManager.js');
+        itemsManager = im;
+    }
+    return itemsManager;
+}
+
 export default class GameStateManager {
     constructor() {
         // Initialize as singleton
@@ -212,6 +233,10 @@ export default class GameStateManager {
         console.log('[GameStateManager] ========== SAVING GAME ==========');
         console.log('[GameStateManager] Player position to save:', playerPosition);
         
+        // Get money and items data
+        const mm = getMoneyManager();
+        const im = getItemsManager();
+        
         const gameState = {
             playTime: this.getPlayTime(),
             playerStats: this.playerStats,
@@ -220,6 +245,8 @@ export default class GameStateManager {
             battleHistory: this.battleHistory,
             negotiationHistory: this.negotiationHistory,
             playerPosition: playerPosition,
+            money: mm ? mm.getSaveData() : { money: 100, transactionHistory: [] },
+            items: im ? im.getSaveData() : { inventory: [] },
             savedAt: new Date().toISOString()
         };
 
@@ -260,11 +287,25 @@ export default class GameStateManager {
             this.battleHistory = gameState.battleHistory || [];
             this.negotiationHistory = gameState.negotiationHistory || [];
             
+            // Restore money and items
+            const mm = getMoneyManager();
+            const im = getItemsManager();
+            
+            if (mm && gameState.money) {
+                mm.loadSaveData(gameState.money);
+            }
+            
+            if (im && gameState.items) {
+                im.loadSaveData(gameState.items);
+            }
+            
             console.log('[GameStateManager] ✅ State restored:');
             console.log('  - Play time:', this.totalPlayTime, 'ms');
             console.log('  - Player stats:', this.playerStats);
             console.log('  - Defeated NPCs:', Array.from(this.defeatedNpcIds));
             console.log('  - Player position:', gameState.playerPosition);
+            console.log('  - Money:', mm ? mm.getMoney() : 'N/A');
+            console.log('  - Items:', im ? im.getInventory().length : 'N/A', 'types');
             console.log('[GameStateManager] =====================================');
             
             return {
@@ -306,8 +347,15 @@ export default class GameStateManager {
         this.battleHistory = [];
         this.negotiationHistory = [];
         
+        // Reset money and items
+        const mm = getMoneyManager();
+        const im = getItemsManager();
+        
+        if (mm) mm.reset();
+        if (im) im.reset();
+        
         localStorage.removeItem('gameState');
-        console.log('[GameStateManager] Game state reset');
+        console.log('[GameStateManager] Game state reset (including money and items)');
     }
 }
 

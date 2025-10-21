@@ -3,6 +3,7 @@
  * Uses HTML/CSS for better styling and performance
  */
 import { gameStateManager } from '../managers/GameStateManager.js';
+import { moneyManager } from '../managers/MoneyManager.js';
 
 export default class HUDManager {
     constructor(scene) {
@@ -44,8 +45,9 @@ export default class HUDManager {
         // Get player stats from GameStateManager
         const playerStats = gameStateManager.getPlayerStats();
 
-        // Player Stats Panel - HP and Level only
+        // Player Stats Panel - HP, Level, and Money
         this.elements.statsPanel = this.createPanel('stats-panel', 'top-left');
+        const money = moneyManager.getMoney();
         this.elements.statsPanel.innerHTML = `
             <div class="hud-title">Player</div>
             <div class="stat-row">
@@ -58,6 +60,10 @@ export default class HUDManager {
             <div class="stat-row">
                 <span class="stat-label">Level:</span>
                 <span class="stat-value" id="player-level">${playerStats.level}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">💰</span>
+                <span class="stat-value" id="player-money" style="color: #FFD700;">${money}</span>
             </div>
         `;
 
@@ -93,8 +99,9 @@ export default class HUDManager {
         // Get player stats from GameStateManager
         const playerStats = gameStateManager.getPlayerStats();
         
-        // Player Stats (left side) - HP and Level only
+        // Player Stats (left side) - HP, Level, and Money
         this.elements.playerPanel = this.createPanel('player-panel', 'top-left');
+        const money = moneyManager.getMoney();
         this.elements.playerPanel.innerHTML = `
             <div class="hud-title">Player</div>
             <div class="stat-row">
@@ -107,6 +114,10 @@ export default class HUDManager {
             <div class="stat-row">
                 <span class="stat-label">Level:</span>
                 <span class="stat-value" id="battle-player-level">${playerStats.level}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">💰</span>
+                <span class="stat-value" id="battle-player-money" style="color: #FFD700;">${money}</span>
             </div>
         `;
 
@@ -200,6 +211,29 @@ export default class HUDManager {
         
         // Update health
         this.updatePlayerHealth(playerStats.health, playerStats.maxHealth);
+        
+        // Update money
+        this.updatePlayerMoney(moneyManager.getMoney());
+    }
+    
+    /**
+     * Update player money display
+     * @param {number} money - Current money amount
+     */
+    updatePlayerMoney(money) {
+        const sceneKey = this.scene.scene.key;
+        
+        if (sceneKey === 'WorldScene') {
+            const moneyElement = document.getElementById('player-money');
+            if (moneyElement) {
+                moneyElement.textContent = money;
+            }
+        } else if (sceneKey === 'BattleScene') {
+            const moneyElement = document.getElementById('battle-player-money');
+            if (moneyElement) {
+                moneyElement.textContent = money;
+            }
+        }
     }
 
     /**

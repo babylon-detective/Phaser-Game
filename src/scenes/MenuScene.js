@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { gameStateManager } from "../managers/GameStateManager.js";
+import { moneyManager } from "../managers/MoneyManager.js";
+import { itemsManager } from "../managers/ItemsManager.js";
 
 export default class MenuScene extends Phaser.Scene {
     constructor() {
@@ -18,7 +20,7 @@ export default class MenuScene extends Phaser.Scene {
         console.log('[MenuScene] Player on save point:', this.isOnSavePoint);
         
         // Define tabs based on save point status
-        this.tabs = ['Player Stats'];
+        this.tabs = ['Player Stats', 'Inventory'];
         if (this.isOnSavePoint) {
             this.tabs.push('Save Game');
         }
@@ -313,6 +315,8 @@ export default class MenuScene extends Phaser.Scene {
         
         if (currentTab === 'Player Stats') {
             this.showPlayerStatsContent();
+        } else if (currentTab === 'Inventory') {
+            this.showInventoryContent();
         } else if (currentTab === 'Save Game') {
             this.showSaveGameContent();
         }
@@ -321,10 +325,17 @@ export default class MenuScene extends Phaser.Scene {
     showPlayerStatsContent() {
         const playerStats = gameStateManager.getPlayerStats();
         const xpPercent = (playerStats.experience / playerStats.experienceToNextLevel) * 100;
+        const money = moneyManager.getMoney();
         
         this.contentPanel.innerHTML = `
             <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #4A90E2; border-bottom: 2px solid #4A90E2; padding-bottom: 10px;">
                 PLAYER STATS
+            </div>
+            
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px; text-align: center;">
+                <div style="color: #FFD700; font-weight: bold; font-size: 24px;">
+                    💰 ${money} Gold
+                </div>
             </div>
             
             <div style="margin-bottom: 12px;">
@@ -359,6 +370,71 @@ export default class MenuScene extends Phaser.Scene {
                 <span style="color: #00D9FF; font-weight: bold;">${playerStats.speed}</span>
             </div>
         `;
+    }
+    
+    showInventoryContent() {
+        const inventory = itemsManager.getInventory();
+        const money = moneyManager.getMoney();
+        const totalValue = itemsManager.getInventoryValue();
+        
+        let inventoryHTML = `
+            <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #00D9FF; border-bottom: 2px solid #00D9FF; padding-bottom: 10px;">
+                INVENTORY
+            </div>
+            
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px; display: flex; justify-content: space-between;">
+                <div>
+                    <div style="color: #AAA; font-size: 12px; margin-bottom: 3px;">Gold</div>
+                    <div style="color: #FFD700; font-weight: bold; font-size: 20px;">💰 ${money}</div>
+                </div>
+                <div>
+                    <div style="color: #AAA; font-size: 12px; margin-bottom: 3px;">Total Value</div>
+                    <div style="color: #00D9FF; font-weight: bold; font-size: 20px;">${totalValue}</div>
+                </div>
+            </div>
+        `;
+        
+        if (inventory.length === 0) {
+            inventoryHTML += `
+                <div style="text-align: center; padding: 30px; color: #666; font-style: italic;">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📦</div>
+                    <div>Your inventory is empty</div>
+                </div>
+            `;
+        } else {
+            inventoryHTML += `<div style="max-height: 300px; overflow-y: auto;">`;
+            
+            inventory.forEach(item => {
+                const iconMap = {
+                    'consumable': '🧪',
+                    'quest': '📜',
+                    'valuable': '💎',
+                    'equipment': '⚔️'
+                };
+                const icon = iconMap[item.type] || '📦';
+                
+                inventoryHTML += `
+                    <div style="margin-bottom: 10px; padding: 12px; background: rgba(0, 217, 255, 0.05); border: 1px solid #00D9FF; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 5px;">
+                            <div>
+                                <span style="font-size: 20px; margin-right: 8px;">${icon}</span>
+                                <span style="color: #FFF; font-weight: bold;">${item.name}</span>
+                            </div>
+                            <div style="color: #00D9FF; font-weight: bold;">x${item.quantity}</div>
+                        </div>
+                        <div style="font-size: 12px; color: #AAA; margin-bottom: 5px;">${item.description}</div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                            <span style="color: #888;">Type: ${item.type}</span>
+                            <span style="color: #FFD700;">Value: ${item.value} each</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            inventoryHTML += `</div>`;
+        }
+        
+        this.contentPanel.innerHTML = inventoryHTML;
     }
     
     showSaveGameContent() {
