@@ -765,7 +765,7 @@ export default class BattleScene extends Phaser.Scene {
             </p>
             <div id="dialogue-choices"></div>
             <div style="margin-top: 20px; text-align: center; font-size: 14px; color: #aaa;">
-                W/S - Navigate | ] - Select | ESC - Fight
+                W/S - Navigate | ] - Select | <span style="color: #FFD700; font-weight: bold;">ESC - Cancel</span>
             </div>
         `;
         
@@ -822,6 +822,16 @@ export default class BattleScene extends Phaser.Scene {
         
         // Update initial selection
         this.updateDialogueSelection();
+        
+        // Add DOM-level ESC listener for reliable cancel functionality
+        this.dialogueEscapeListener = (event) => {
+            if (this.isDialogueActive && event.key === 'Escape') {
+                console.log('[BattleScene] ESC pressed - closing dialogue');
+                event.preventDefault();
+                this.closeDialogue();
+            }
+        };
+        document.addEventListener('keydown', this.dialogueEscapeListener);
     }
     
     setupDialogueInput() {
@@ -870,13 +880,10 @@ export default class BattleScene extends Phaser.Scene {
             this.confirmDialogueChoice();
         }
         
-        // Cancel / Choose fight (ESC)
+        // Cancel / Close dialogue (ESC)
         if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
-            // Find the "fight" option and select it
-            const fightOption = this.dialogueOptions.find(opt => opt.id === 'fight');
-            if (fightOption) {
-                this.handleDialogueChoice('fight', fightOption, this.dialogueNpcData);
-            }
+            console.log('[BattleScene] ESC key pressed - closing dialogue');
+            this.closeDialogue();
         }
     }
     
@@ -914,6 +921,14 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     cleanupDialogueInput() {
+        console.log('[BattleScene] Cleaning up dialogue input');
+        
+        // Remove DOM-level ESC listener
+        if (this.dialogueEscapeListener) {
+            document.removeEventListener('keydown', this.dialogueEscapeListener);
+            this.dialogueEscapeListener = null;
+        }
+        
         // Clean up dialogue input keys
         if (this.dialogueKeys) {
             Object.values(this.dialogueKeys).forEach(key => {
@@ -926,6 +941,24 @@ export default class BattleScene extends Phaser.Scene {
         this.dialogueNpcData = null;
         this.dialogueOptions = null;
         this.selectedDialogueIndex = 0;
+    }
+    
+    closeDialogue() {
+        console.log('[BattleScene] Closing dialogue (cancelled)');
+        
+        // Clean up dialogue input
+        this.cleanupDialogueInput();
+        
+        // Remove dialogue overlay
+        const dialogueOverlay = document.getElementById('dialogue-overlay');
+        if (dialogueOverlay) {
+            dialogueOverlay.remove();
+        }
+        
+        // Resume battle scene
+        this.scene.resume();
+        
+        console.log('[BattleScene] Dialogue closed, battle resumed');
     }
     
     handleDialogueChoice(choiceId, optionData, npcData) {
