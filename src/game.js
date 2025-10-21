@@ -3,6 +3,7 @@ import Phaser from "phaser";
 import StartScene from "./scenes/StartScene";
 import WorldScene from "./scenes/WorldScene";
 import BattleScene from "./scenes/BattleScene";
+import BattleMenuScene from "./scenes/BattleMenuScene";
 import ShooterScene from "./scenes/ShooterScene";
 import MapScene from "./scenes/MapScene";
 import MenuScene from "./scenes/MenuScene";
@@ -34,7 +35,7 @@ const config = {
             debug: false
         }
     },
-    scene: [StartScene, WorldScene, BattleScene, ShooterScene, MapScene, MenuScene]
+    scene: [StartScene, WorldScene, BattleScene, BattleMenuScene, ShooterScene, MapScene, MenuScene]
 };
 
 const game = new Phaser.Game(config);

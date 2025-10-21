@@ -124,8 +124,8 @@ export default class BattleScene extends Phaser.Scene {
             ease: 'Power2',
             onComplete: () => {
                 blackScreen.destroy();
-                // Show dialogue options first
-                this.showDialogueOptions();
+                // Start battle immediately (no dialogue at start)
+                this.setupBattle();
             }
         });
     }
@@ -335,6 +335,13 @@ export default class BattleScene extends Phaser.Scene {
         };
         this.input.keyboard.on('keyup', this.chargeEndListener);
 
+        // Add / key handler for BattleMenuScene
+        this.slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
+        this.slashKey.on('down', () => {
+            console.log('[BattleScene] Opening Battle Menu with /');
+            this.openBattleMenu();
+        });
+
         // Enable input
         this.input.keyboard.enabled = true;
         this.input.mouse.enabled = true;
@@ -358,6 +365,10 @@ export default class BattleScene extends Phaser.Scene {
         }
 
         // Remove all keys
+        if (this.slashKey) {
+            this.slashKey.destroy();
+            this.slashKey = null;
+        }
         if (this.escapeKey) {
             this.escapeKey.destroy();
             this.escapeKey = null;
@@ -384,6 +395,24 @@ export default class BattleScene extends Phaser.Scene {
         // Remove all keyboard listeners
         this.input.keyboard.removeAllKeys(true);
         this.input.keyboard.removeAllListeners();
+    }
+
+    openBattleMenu() {
+        console.log('[BattleScene] Opening Battle Menu');
+        
+        // Pause battle scene
+        this.scene.pause();
+        
+        // Launch BattleMenuScene with enemy data
+        this.scene.launch('BattleMenuScene', {
+            enemies: this.enemies.map(enemy => ({
+                id: enemy.enemyData.id,
+                type: enemy.enemyData.type,
+                level: enemy.enemyData.level,
+                health: enemy.enemyData.health,
+                maxHealth: enemy.enemyData.maxHealth
+            }))
+        });
     }
 
     returnToWorld() {
