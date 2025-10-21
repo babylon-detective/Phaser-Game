@@ -137,7 +137,7 @@ export default class BattleMenuScene extends Phaser.Scene {
         this.icons = [
             { id: 'talk', label: '💬', name: 'Talk', description: 'Negotiate with enemies' },
             { id: 'items', label: '🎒', name: 'Items', description: 'Use items' },
-            { id: 'stats', label: '📊', name: 'Stats', description: 'View stats' }
+            { id: 'macros', label: '⚡', name: 'Macros', description: 'Execute custom action combos' }
         ];
 
         // Create icon elements
@@ -240,8 +240,8 @@ export default class BattleMenuScene extends Phaser.Scene {
             case 'items':
                 this.showItemsNotImplemented();
                 break;
-            case 'stats':
-                this.showStatsNotImplemented();
+            case 'macros':
+                this.showMacrosNotImplemented();
                 break;
         }
     }
@@ -434,8 +434,8 @@ export default class BattleMenuScene extends Phaser.Scene {
         alert('Items menu coming soon!');
     }
 
-    showStatsNotImplemented() {
-        alert('Stats menu coming soon!');
+    showMacrosNotImplemented() {
+        alert('Macros system coming soon! Create custom action combinations to execute complex strategies with a single button press.');
     }
 
     startTimerUpdate() {
