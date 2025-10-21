@@ -667,6 +667,19 @@ export default class BattleScene extends Phaser.Scene {
         
         console.log('[BattleScene] Dialogue options:', dialogueOptions);
         
+        // Store dialogue state for keyboard navigation
+        this.dialogueNpcData = npcData;
+        this.dialogueOptions = dialogueOptions.options;
+        this.selectedDialogueIndex = 0;
+        
+        // Find first available option as default selection
+        for (let i = 0; i < this.dialogueOptions.length; i++) {
+            if (this.dialogueOptions[i].available) {
+                this.selectedDialogueIndex = i;
+                break;
+            }
+        }
+        
         // Create dialogue overlay DOM
         const dialogueOverlay = document.createElement('div');
         dialogueOverlay.id = 'dialogue-overlay';
@@ -704,6 +717,9 @@ export default class BattleScene extends Phaser.Scene {
                 ${dialogueOptions.greeting}
             </p>
             <div id="dialogue-choices"></div>
+            <div style="margin-top: 20px; text-align: center; font-size: 14px; color: #aaa;">
+                W/S - Navigate | ] - Select | ESC - Fight
+            </div>
         `;
         
         const choicesContainer = document.createElement('div');
@@ -715,8 +731,9 @@ export default class BattleScene extends Phaser.Scene {
         `;
         
         // Add dialogue choices (DialogueManager returns 'options', not 'choices')
-        dialogueOptions.options.forEach((choice, index) => {
-            const button = document.createElement('button');
+        this.dialogueOptions.forEach((choice, index) => {
+            const button = document.createElement('div');
+            button.id = `dialogue-choice-${index}`;
             button.style.cssText = `
                 background: linear-gradient(135deg, #2c3e50, #34495e);
                 border: 2px solid ${choice.available ? '#3498db' : '#555'};
@@ -724,9 +741,9 @@ export default class BattleScene extends Phaser.Scene {
                 padding: 15px;
                 color: ${choice.available ? 'white' : '#888'};
                 font-size: 16px;
-                cursor: ${choice.available ? 'pointer' : 'not-allowed'};
                 transition: all 0.3s;
                 text-align: left;
+                ${choice.available ? 'cursor: pointer;' : 'cursor: not-allowed;'}
             `;
             
             button.innerHTML = `
@@ -735,17 +752,14 @@ export default class BattleScene extends Phaser.Scene {
                 ${!choice.available ? `<div style="font-size: 12px; color: #e74c3c;">${choice.reason}</div>` : ''}
             `;
             
+            // Keep mouse support
             if (choice.available) {
                 button.addEventListener('mouseenter', () => {
-                    button.style.border = '2px solid gold';
-                    button.style.transform = 'translateX(10px)';
-                });
-                button.addEventListener('mouseleave', () => {
-                    button.style.border = '2px solid #3498db';
-                    button.style.transform = 'translateX(0)';
+                    this.selectedDialogueIndex = index;
+                    this.updateDialogueSelection();
                 });
                 button.addEventListener('click', () => {
-                    this.handleDialogueChoice(choice.id, choice, npcData);
+                    this.confirmDialogueChoice();
                 });
             }
             
@@ -755,10 +769,123 @@ export default class BattleScene extends Phaser.Scene {
         dialogueBox.querySelector('#dialogue-choices').replaceWith(choicesContainer);
         dialogueOverlay.appendChild(dialogueBox);
         document.body.appendChild(dialogueOverlay);
+        
+        // Set up keyboard controls for dialogue
+        this.setupDialogueInput();
+        
+        // Update initial selection
+        this.updateDialogueSelection();
+    }
+    
+    setupDialogueInput() {
+        // Set up WASD navigation for dialogue
+        this.dialogueKeys = {
+            w: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+            s: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+            confirm: this.input.keyboard.addKey(221), // ] key
+            cancel: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+        };
+        
+        this.isDialogueActive = true;
+    }
+    
+    updateDialogueNavigation() {
+        if (!this.isDialogueActive || !this.dialogueKeys) return;
+        
+        const keys = this.dialogueKeys;
+        
+        // Navigate up (W)
+        if (Phaser.Input.Keyboard.JustDown(keys.w)) {
+            do {
+                this.selectedDialogueIndex--;
+                if (this.selectedDialogueIndex < 0) {
+                    this.selectedDialogueIndex = this.dialogueOptions.length - 1;
+                }
+            } while (!this.dialogueOptions[this.selectedDialogueIndex].available);
+            
+            this.updateDialogueSelection();
+        }
+        
+        // Navigate down (S)
+        if (Phaser.Input.Keyboard.JustDown(keys.s)) {
+            do {
+                this.selectedDialogueIndex++;
+                if (this.selectedDialogueIndex >= this.dialogueOptions.length) {
+                    this.selectedDialogueIndex = 0;
+                }
+            } while (!this.dialogueOptions[this.selectedDialogueIndex].available);
+            
+            this.updateDialogueSelection();
+        }
+        
+        // Confirm selection (])
+        if (Phaser.Input.Keyboard.JustDown(keys.confirm)) {
+            this.confirmDialogueChoice();
+        }
+        
+        // Cancel / Choose fight (ESC)
+        if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
+            // Find the "fight" option and select it
+            const fightOption = this.dialogueOptions.find(opt => opt.id === 'fight');
+            if (fightOption) {
+                this.handleDialogueChoice('fight', fightOption, this.dialogueNpcData);
+            }
+        }
+    }
+    
+    updateDialogueSelection() {
+        // Update visual state of all options
+        this.dialogueOptions.forEach((choice, index) => {
+            const button = document.getElementById(`dialogue-choice-${index}`);
+            if (button) {
+                const isSelected = index === this.selectedDialogueIndex;
+                const isAvailable = choice.available;
+                
+                if (isSelected && isAvailable) {
+                    button.style.border = '2px solid gold';
+                    button.style.transform = 'translateX(10px)';
+                    button.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.5)';
+                } else if (isAvailable) {
+                    button.style.border = '2px solid #3498db';
+                    button.style.transform = 'translateX(0)';
+                    button.style.boxShadow = 'none';
+                } else {
+                    button.style.border = '2px solid #555';
+                    button.style.transform = 'translateX(0)';
+                    button.style.boxShadow = 'none';
+                }
+            }
+        });
+    }
+    
+    confirmDialogueChoice() {
+        const selectedChoice = this.dialogueOptions[this.selectedDialogueIndex];
+        if (selectedChoice && selectedChoice.available) {
+            console.log('[BattleScene] Dialogue choice confirmed:', selectedChoice.id);
+            this.handleDialogueChoice(selectedChoice.id, selectedChoice, this.dialogueNpcData);
+        }
+    }
+    
+    cleanupDialogueInput() {
+        // Clean up dialogue input keys
+        if (this.dialogueKeys) {
+            Object.values(this.dialogueKeys).forEach(key => {
+                if (key) key.destroy();
+            });
+            this.dialogueKeys = null;
+        }
+        
+        this.isDialogueActive = false;
+        this.dialogueNpcData = null;
+        this.dialogueOptions = null;
+        this.selectedDialogueIndex = 0;
     }
     
     handleDialogueChoice(choiceId, optionData, npcData) {
         console.log('[BattleScene] Dialogue choice:', choiceId, optionData);
+        
+        // Clean up dialogue input first
+        this.cleanupDialogueInput();
         
         // Remove dialogue overlay
         const dialogueOverlay = document.getElementById('dialogue-overlay');
@@ -1108,7 +1235,13 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     update() {
-        // Handle enemy selection mode first (separate from normal battle update)
+        // Handle dialogue navigation first (if dialogue is active)
+        if (this.isDialogueActive) {
+            this.updateDialogueNavigation();
+            return; // Don't process other logic during dialogue
+        }
+        
+        // Handle enemy selection mode (separate from normal battle update)
         if (this.isEnemySelectionMode) {
             this.updateEnemySelection();
             return; // Don't process battle logic during enemy selection
