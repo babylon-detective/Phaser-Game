@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dialogue Card Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            color: white;
+            font-family: Arial, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .test-button {
+            background: linear-gradient(135deg, #4A90E2, #357ABD);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+        }
+        
+        .test-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        
+        h1, h2 {
+            color: #FFD700;
+        }
+        
+        .instructions {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid #FFD700;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🎭 Dialogue Card System Test</h1>
+        
+        <div class="instructions">
+            <h3>📱 Mobile-Friendly Features:</h3>
+            <ul>
+                <li>Responsive design that adapts to screen size</li>
+                <li>Touch-friendly interface for mobile devices</li>
+                <li>Transparent gradient background with portrait window</li>
+                <li>Dynamic 2D portraits for both player and NPCs</li>
+                <li>Keyboard navigation (W/S or Arrow keys, Enter to select, ESC to close)</li>
+            </ul>
+        </div>
+        
+        <div class="test-section">
+            <h2>🧙‍♂️ NPC Dialogue Tests</h2>
+            <button class="test-button" onclick="testGuardDialogue()">Test Guard Dialogue</button>
+            <button class="test-button" onclick="testMerchantDialogue()">Test Merchant Dialogue</button>
+            <button class="test-button" onclick="testVillagerDialogue()">Test Villager Dialogue</button>
+        </div>
+        
+        <div class="test-section">
+            <h2>👤 Player Dialogue Tests</h2>
+            <button class="test-button" onclick="testPlayerDialogue()">Test Player Dialogue</button>
+            <button class="test-button" onclick="testPlayerChoices()">Test Player Choices</button>
+        </div>
+        
+        <div class="test-section">
+            <h2>📱 Mobile Tests</h2>
+            <button class="test-button" onclick="testMobileLayout()">Test Mobile Layout</button>
+            <button class="test-button" onclick="testResponsiveDesign()">Test Responsive Design</button>
+        </div>
+        
+        <div class="test-section">
+            <h2>🎨 Visual Tests</h2>
+            <button class="test-button" onclick="testPortraitVariations()">Test Portrait Variations</button>
+            <button class="test-button" onclick="testLongText()">Test Long Text</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import DialogueCard from './src/ui/DialogueCard.js';
+        
+        // Create a mock scene object for testing
+        const mockScene = {
+            gameStateManager: {
+                playerStats: {
+                    level: 5
+                }
+            }
+        };
+        
+        // Initialize dialogue card
+        const dialogueCard = new DialogueCard(mockScene);
+        
+        // Test functions
+        window.testGuardDialogue = () => {
+            const guardData = {
+                type: 'GUARD',
+                level: 3,
+                name: 'City Guard'
+            };
+            
+            const message = "Halt! You there! State your business! I won't let you pass without proper identification!";
+            
+            const choices = [
+                {
+                    id: 'fight',
+                    text: '⚔️ Fight',
+                    description: 'Engage in combat',
+                    available: true
+                },
+                {
+                    id: 'negotiate_money',
+                    text: '💰 Negotiate (50 gold)',
+                    description: 'Offer money to avoid combat',
+                    available: true,
+                    cost: 50
+                },
+                {
+                    id: 'flee',
+                    text: '🏃 Flee',
+                    description: 'Try to escape',
+                    available: true
+                }
+            ];
+            
+            dialogueCard.show(guardData, message, choices, (choice) => {
+                console.log('Guard choice selected:', choice);
+                alert(`You chose: ${choice.text}`);
+                dialogueCard.hide();
+            });
+        };
+        
+        window.testMerchantDialogue = () => {
+            const merchantData = {
+                type: 'MERCHANT',
+                level: 2,
+                name: 'Traveling Merchant'
+            };
+            
+            const message = "Greetings, traveler! Let's discuss terms. I have many fine wares, but first we must settle our... disagreement.";
+            
+            const choices = [
+                {
+                    id: 'fight',
+                    text: '⚔️ Fight',
+                    description: 'Engage in combat',
+                    available: true
+                },
+                {
+                    id: 'negotiate_money',
+                    text: '💰 Negotiate (30 gold)',
+                    description: 'Offer money to avoid combat',
+                    available: true,
+                    cost: 30
+                },
+                {
+                    id: 'negotiate_item',
+                    text: '🎁 Gift Item (Value: 45+)',
+                    description: 'Offer an item to avoid combat',
+                    available: true,
+                    requiredValue: 45
+                }
+            ];
+            
+            dialogueCard.show(merchantData, message, choices, (choice) => {
+                console.log('Merchant choice selected:', choice);
+                alert(`You chose: ${choice.text}`);
+                dialogueCard.hide();
+            });
+        };
+        
+        window.testVillagerDialogue = () => {
+            const villagerData = {
+                type: 'VILLAGER',
+                level: 1,
+                name: 'Concerned Villager'
+            };
+            
+            const message = "Hello... can we talk about this? I don't want any trouble. Maybe we can work something out?";
+            
+            const choices = [
+                {
+                    id: 'fight',
+                    text: '⚔️ Fight',
+                    description: 'Engage in combat',
+                    available: true
+                },
+                {
+                    id: 'negotiate_money',
+                    text: '💰 Negotiate (20 gold)',
+                    description: 'Offer money to avoid combat',
+                    available: true,
+                    cost: 20
+                },
+                {
+                    id: 'flee',
+                    text: '🏃 Flee',
+                    description: 'Try to escape',
+                    available: true
+                }
+            ];
+            
+            dialogueCard.show(villagerData, message, choices, (choice) => {
+                console.log('Villager choice selected:', choice);
+                alert(`You chose: ${choice.text}`);
+                dialogueCard.hide();
+            });
+        };
+        
+        window.testPlayerDialogue = () => {
+            const message = "I am a brave adventurer seeking glory and treasure! I won't back down from this challenge!";
+            
+            dialogueCard.showPlayerDialogue(message, [], () => {}, () => {
+                console.log('Player dialogue closed');
+            });
+        };
+        
+        window.testPlayerChoices = () => {
+            const message = "What should I do in this situation?";
+            
+            const choices = [
+                {
+                    id: 'attack',
+                    text: '🗡️ Attack immediately',
+                    description: 'Strike first and strike hard',
+                    available: true
+                },
+                {
+                    id: 'defend',
+                    text: '🛡️ Take defensive stance',
+                    description: 'Wait for the right moment',
+                    available: true
+                },
+                {
+                    id: 'observe',
+                    text: '👁️ Observe carefully',
+                    description: 'Study the enemy for weaknesses',
+                    available: true
+                }
+            ];
+            
+            dialogueCard.showPlayerDialogue(message, choices, (choice) => {
+                console.log('Player choice selected:', choice);
+                alert(`You chose: ${choice.text}`);
+                dialogueCard.hide();
+            });
+        };
+        
+        window.testMobileLayout = () => {
+            // Simulate mobile viewport
+            const originalWidth = window.innerWidth;
+            const originalHeight = window.innerHeight;
+            
+            // Resize to mobile dimensions
+            Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 });
+            Object.defineProperty(window, 'innerHeight', { writable: true, configurable: true, value: 667 });
+            
+            // Trigger resize event
+            window.dispatchEvent(new Event('resize'));
+            
+            // Test dialogue
+            const npcData = {
+                type: 'GUARD',
+                level: 3,
+                name: 'Mobile Guard'
+            };
+            
+            const message = "Testing mobile layout! This should adapt to the smaller screen size.";
+            
+            dialogueCard.show(npcData, message, [], () => {}, () => {
+                // Restore original dimensions
+                Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalWidth });
+                Object.defineProperty(window, 'innerHeight', { writable: true, configurable: true, value: originalHeight });
+                window.dispatchEvent(new Event('resize'));
+            });
+        };
+        
+        window.testResponsiveDesign = () => {
+            const npcData = {
+                type: 'MERCHANT',
+                level: 4,
+                name: 'Responsive Merchant'
+            };
+            
+            const message = "Try resizing your browser window while this dialogue is open to see the responsive design in action!";
+            
+            dialogueCard.show(npcData, message, [], () => {}, () => {
+                console.log('Responsive test completed');
+            });
+        };
+        
+        window.testPortraitVariations = () => {
+            const npcTypes = ['GUARD', 'MERCHANT', 'VILLAGER'];
+            let currentIndex = 0;
+            
+            const showNextPortrait = () => {
+                if (currentIndex >= npcTypes.length) {
+                    dialogueCard.hide();
+                    return;
+                }
+                
+                const npcData = {
+                    type: npcTypes[currentIndex],
+                    level: currentIndex + 1,
+                    name: `${npcTypes[currentIndex]} ${currentIndex + 1}`
+                };
+                
+                const message = `This is a ${npcTypes[currentIndex]} portrait. Notice the different colors and features!`;
+                
+                dialogueCard.show(npcData, message, [], () => {
+                    currentIndex++;
+                    showNextPortrait();
+                }, () => {
+                    currentIndex++;
+                    showNextPortrait();
+                });
+            };
+            
+            showNextPortrait();
+        };
+        
+        window.testLongText = () => {
+            const npcData = {
+                type: 'GUARD',
+                level: 5,
+                name: 'Verbose Guard'
+            };
+            
+            const message = `This is a very long dialogue message that should test the scrolling functionality of the text area. 
+            
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. 
+            
+            Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. 
+            
+            Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. 
+            
+            Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+            
+            This text should be scrollable if it exceeds the available space in the dialogue card.`;
+            
+            const choices = [
+                {
+                    id: 'continue',
+                    text: '📖 Continue reading',
+                    description: 'Keep reading the long text',
+                    available: true
+                },
+                {
+                    id: 'skip',
+                    text: '⏭️ Skip to end',
+                    description: 'Jump to the end of the text',
+                    available: true
+                }
+            ];
+            
+            dialogueCard.show(npcData, message, choices, (choice) => {
+                console.log('Long text choice selected:', choice);
+                alert(`You chose: ${choice.text}`);
+                dialogueCard.hide();
+            });
+        };
+        
+        console.log('Dialogue Card Test loaded! Click the buttons to test different features.');
+    </script>
+</body>
+</html>

@@ -1,8 +1,10 @@
 import Phaser from "phaser";
 import HUDManager from "../ui/HUDManager";
+import DialogueCard from "../ui/DialogueCard.js";
 import { gameStateManager } from "../managers/GameStateManager.js";
 import { statsManager } from "../managers/StatsManager.js";
 import { dialogueManager } from "../managers/DialogueManager.js";
+import { dialogueDatabase } from "../data/DialogueDatabase.js";
 import { moneyManager } from "../managers/MoneyManager.js";
 import { itemsManager } from "../managers/ItemsManager.js";
 
@@ -62,7 +64,7 @@ export default class BattleScene extends Phaser.Scene {
         this.totalXpEarned = 0; // Track total XP earned this battle
         this.defeatedEnemiesData = []; // Store defeated enemy data for XP calculation
         // Dialogue system properties
-        this.dialogueOverlay = null;
+        this.dialogueCard = null;
         this.dialogueChoice = null; // 'fight', 'negotiate_money', 'negotiate_item', 'flee'
         this.isDialogueActive = false;
     }
@@ -273,6 +275,9 @@ export default class BattleScene extends Phaser.Scene {
         
         // Initialize enemy list in HUD
         this.updateEnemyHUD();
+        
+        // Initialize dialogue card system
+        this.dialogueCard = new DialogueCard(this);
 
         // Set up scene event listeners for HUD management
         this.events.on('shutdown', () => {
@@ -451,7 +456,9 @@ export default class BattleScene extends Phaser.Scene {
         // Resume the scene so update() can run (for enemy selection input)
         // But battle logic is blocked by isEnemySelectionMode check
         console.log('[BattleScene] Resuming scene for enemy selection');
-        this.scene.resume();
+        if (this.scene.isPaused()) {
+            this.scene.resume();
+        }
         
         // Ensure input is enabled
         this.input.enabled = true;
@@ -647,7 +654,9 @@ export default class BattleScene extends Phaser.Scene {
         this.cleanupEnemySelection();
         
         // Resume battle normally
-        this.scene.resume();
+        if (this.scene.isPaused()) {
+            this.scene.resume();
+        }
     }
     
     cleanupEnemySelection() {
@@ -692,8 +701,8 @@ export default class BattleScene extends Phaser.Scene {
     startDialogueWithEnemy(enemy) {
         console.log('[BattleScene] Starting dialogue with enemy:', enemy.enemyData);
         
-        // Pause the battle scene
-        this.scene.pause();
+        // Don't pause the scene - just set dialogue active flag
+        // The scene will handle input differently when dialogue is active
         
         // Launch dialogue manager with enemy data
         const npcData = {
@@ -709,275 +718,91 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     showDialogueForEnemy(npcData) {
-        // Get dialogue options from DialogueManager
-        const dialogueOptions = dialogueManager.getDialogueOptions(npcData);
+        console.log('[BattleScene] Starting dialogue with:', npcData);
         
-        console.log('[BattleScene] Dialogue options:', dialogueOptions);
-        
-        // Store dialogue state for keyboard navigation
+        // Store dialogue state
         this.dialogueNpcData = npcData;
-        this.dialogueOptions = dialogueOptions.options;
-        this.selectedDialogueIndex = 0;
-        
-        // Find first available option as default selection
-        for (let i = 0; i < this.dialogueOptions.length; i++) {
-            if (this.dialogueOptions[i].available) {
-                this.selectedDialogueIndex = i;
-                break;
-            }
-        }
-        
-        // Create dialogue overlay DOM
-        const dialogueOverlay = document.createElement('div');
-        dialogueOverlay.id = 'dialogue-overlay';
-        dialogueOverlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            pointer-events: auto;
-        `;
-        
-        const dialogueBox = document.createElement('div');
-        dialogueBox.style.cssText = `
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
-            border: 3px solid gold;
-            border-radius: 15px;
-            padding: 30px;
-            max-width: 600px;
-            color: white;
-            font-family: Arial, sans-serif;
-        `;
-        
-        dialogueBox.innerHTML = `
-            <h2 style="color: gold; margin: 0 0 20px 0; text-align: center;">
-                ${npcData.type} (Level ${npcData.level})
-            </h2>
-            <p style="margin-bottom: 30px; font-size: 16px; line-height: 1.5;">
-                ${dialogueOptions.greeting}
-            </p>
-            <div id="dialogue-choices"></div>
-            <div style="margin-top: 20px; text-align: center; font-size: 14px; color: #aaa;">
-                W/S - Navigate | ] - Select | <span style="color: #FFD700; font-weight: bold;">ESC - Cancel</span>
-            </div>
-        `;
-        
-        const choicesContainer = document.createElement('div');
-        choicesContainer.id = 'dialogue-choices';
-        choicesContainer.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        `;
-        
-        // Add dialogue choices (DialogueManager returns 'options', not 'choices')
-        this.dialogueOptions.forEach((choice, index) => {
-            const button = document.createElement('div');
-            button.id = `dialogue-choice-${index}`;
-            button.style.cssText = `
-                background: linear-gradient(135deg, #2c3e50, #34495e);
-                border: 2px solid ${choice.available ? '#3498db' : '#555'};
-                border-radius: 8px;
-                padding: 15px;
-                color: ${choice.available ? 'white' : '#888'};
-                font-size: 16px;
-                transition: all 0.3s;
-                text-align: left;
-                ${choice.available ? 'cursor: pointer;' : 'cursor: not-allowed;'}
-            `;
-            
-            button.innerHTML = `
-                <div style="font-weight: bold; margin-bottom: 5px;">${choice.text}</div>
-                ${choice.cost ? `<div style="font-size: 14px; color: #f39c12;">Cost: ${choice.cost} gold</div>` : ''}
-                ${!choice.available ? `<div style="font-size: 12px; color: #e74c3c;">${choice.reason}</div>` : ''}
-            `;
-            
-            // Keep mouse support
-            if (choice.available) {
-                button.addEventListener('mouseenter', () => {
-                    this.selectedDialogueIndex = index;
-                    this.updateDialogueSelection();
-                });
-                button.addEventListener('click', () => {
-                    this.confirmDialogueChoice();
-                });
-            }
-            
-            choicesContainer.appendChild(button);
-        });
-        
-        dialogueBox.querySelector('#dialogue-choices').replaceWith(choicesContainer);
-        dialogueOverlay.appendChild(dialogueBox);
-        document.body.appendChild(dialogueOverlay);
-        
-        // Set up keyboard controls for dialogue
-        this.setupDialogueInput();
-        
-        // Update initial selection
-        this.updateDialogueSelection();
-        
-        // Add DOM-level ESC listener for reliable cancel functionality
-        this.dialogueEscapeListener = (event) => {
-            if (this.isDialogueActive && event.key === 'Escape') {
-                console.log('[BattleScene] ESC pressed - closing dialogue');
-                event.preventDefault();
-                this.closeDialogue();
-            }
-        };
-        document.addEventListener('keydown', this.dialogueEscapeListener);
-    }
-    
-    setupDialogueInput() {
-        // Set up WASD navigation for dialogue
-        this.dialogueKeys = {
-            w: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-            s: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-            confirm: this.input.keyboard.addKey(221), // ] key
-            cancel: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
-        };
-        
         this.isDialogueActive = true;
+        
+        // Get dialogue from database
+        const dialogueData = dialogueDatabase.getDialogue(npcData.type, 'initial');
+        
+        console.log('[BattleScene] Dialogue data:', dialogueData);
+        
+        // Get player data for portrait switching
+        const playerData = {
+            id: 'player',
+            type: 'Player',
+            level: this.playerData?.level || 1,
+            health: this.playerData?.health || 100,
+            maxHealth: this.playerData?.maxHealth || 100
+        };
+        
+        // Always show multi-paragraph dialogue (NPCs always start with text)
+        this.dialogueCard.showMultiParagraphDialogue(
+            npcData,
+            dialogueData,
+            (choice) => this.handleDialogueChoice(choice?.id, choice, npcData),
+            playerData,
+            () => this.handleDialogueClose()
+        );
     }
     
-    updateDialogueNavigation() {
-        if (!this.isDialogueActive || !this.dialogueKeys) return;
+    handleDialogueClose() {
+        console.log('[BattleScene] Dialogue closed, resetting state');
         
-        const keys = this.dialogueKeys;
-        
-        // Navigate up (W)
-        if (Phaser.Input.Keyboard.JustDown(keys.w)) {
-            do {
-                this.selectedDialogueIndex--;
-                if (this.selectedDialogueIndex < 0) {
-                    this.selectedDialogueIndex = this.dialogueOptions.length - 1;
-                }
-            } while (!this.dialogueOptions[this.selectedDialogueIndex].available);
-            
-            this.updateDialogueSelection();
-        }
-        
-        // Navigate down (S)
-        if (Phaser.Input.Keyboard.JustDown(keys.s)) {
-            do {
-                this.selectedDialogueIndex++;
-                if (this.selectedDialogueIndex >= this.dialogueOptions.length) {
-                    this.selectedDialogueIndex = 0;
-                }
-            } while (!this.dialogueOptions[this.selectedDialogueIndex].available);
-            
-            this.updateDialogueSelection();
-        }
-        
-        // Confirm selection (])
-        if (Phaser.Input.Keyboard.JustDown(keys.confirm)) {
-            this.confirmDialogueChoice();
-        }
-        
-        // Cancel / Close dialogue (ESC)
-        if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
-            console.log('[BattleScene] ESC key pressed - closing dialogue');
-            this.closeDialogue();
-        }
-    }
-    
-    updateDialogueSelection() {
-        // Update visual state of all options
-        this.dialogueOptions.forEach((choice, index) => {
-            const button = document.getElementById(`dialogue-choice-${index}`);
-            if (button) {
-                const isSelected = index === this.selectedDialogueIndex;
-                const isAvailable = choice.available;
-                
-                if (isSelected && isAvailable) {
-                    button.style.border = '2px solid gold';
-                    button.style.transform = 'translateX(10px)';
-                    button.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.5)';
-                } else if (isAvailable) {
-                    button.style.border = '2px solid #3498db';
-                    button.style.transform = 'translateX(0)';
-                    button.style.boxShadow = 'none';
-                } else {
-                    button.style.border = '2px solid #555';
-                    button.style.transform = 'translateX(0)';
-                    button.style.boxShadow = 'none';
-                }
-            }
-        });
-    }
-    
-    confirmDialogueChoice() {
-        const selectedChoice = this.dialogueOptions[this.selectedDialogueIndex];
-        if (selectedChoice && selectedChoice.available) {
-            console.log('[BattleScene] Dialogue choice confirmed:', selectedChoice.id);
-            this.handleDialogueChoice(selectedChoice.id, selectedChoice, this.dialogueNpcData);
-        }
-    }
-    
-    cleanupDialogueInput() {
-        console.log('[BattleScene] Cleaning up dialogue input');
-        
-        // Remove DOM-level ESC listener
-        if (this.dialogueEscapeListener) {
-            document.removeEventListener('keydown', this.dialogueEscapeListener);
-            this.dialogueEscapeListener = null;
-        }
-        
-        // Clean up dialogue input keys
-        if (this.dialogueKeys) {
-            Object.values(this.dialogueKeys).forEach(key => {
-                if (key) key.destroy();
-            });
-            this.dialogueKeys = null;
-        }
-        
+        // Reset dialogue state
         this.isDialogueActive = false;
         this.dialogueNpcData = null;
-        this.dialogueOptions = null;
-        this.selectedDialogueIndex = 0;
+        
+        // Ensure scene is not paused and input is working
+        if (this.scene.isPaused()) {
+            this.scene.resume();
+        }
+        
+        console.log('[BattleScene] Dialogue state reset, scene active:', !this.scene.isPaused());
     }
     
     closeDialogue() {
         console.log('[BattleScene] Closing dialogue (cancelled)');
         
-        // Clean up dialogue input
-        this.cleanupDialogueInput();
-        
-        // Remove dialogue overlay
-        const dialogueOverlay = document.getElementById('dialogue-overlay');
-        if (dialogueOverlay) {
-            dialogueOverlay.remove();
+        // Hide dialogue card
+        if (this.dialogueCard) {
+            this.dialogueCard.hide();
         }
         
-        // Resume battle scene
-        this.scene.resume();
+        // Reset dialogue state
+        this.isDialogueActive = false;
+        this.dialogueNpcData = null;
         
         console.log('[BattleScene] Dialogue closed, battle resumed');
     }
     
+    handleMultiParagraphComplete(npcData, dialogueData) {
+        console.log('[BattleScene] Multi-paragraph dialogue completed');
+        
+        // Reset dialogue state
+        this.isDialogueActive = false;
+        this.dialogueNpcData = null;
+        
+        console.log('[BattleScene] Dialogue completed, battle resumed');
+    }
+    
     handleDialogueChoice(choiceId, optionData, npcData) {
-        console.log('[BattleScene] Dialogue choice:', choiceId, optionData);
+        console.log('[BattleScene] Dialogue choice received:', choiceId, optionData);
+        console.log('[BattleScene] Resetting dialogue state - isDialogueActive was:', this.isDialogueActive);
         
-        // Clean up dialogue input first
-        this.cleanupDialogueInput();
+        // Reset dialogue state
+        this.isDialogueActive = false;
+        this.dialogueNpcData = null;
         
-        // Remove dialogue overlay
-        const dialogueOverlay = document.getElementById('dialogue-overlay');
-        if (dialogueOverlay) {
-            dialogueOverlay.remove();
-        }
+        console.log('[BattleScene] Dialogue state reset - isDialogueActive now:', this.isDialogueActive);
         
         // Handle the choice
         switch (choiceId) {
             case 'fight':
-                // Resume battle
-                this.scene.resume();
+                // Continue battle normally
+                console.log('[BattleScene] Player chose to fight');
                 break;
                 
             case 'negotiate_money':
@@ -1317,7 +1142,7 @@ export default class BattleScene extends Phaser.Scene {
     update() {
         // Handle dialogue navigation first (if dialogue is active)
         if (this.isDialogueActive) {
-            this.updateDialogueNavigation();
+            // Dialogue is handled by DialogueCard, just return without processing other input
             return; // Don't process other logic during dialogue
         }
         
@@ -1374,17 +1199,20 @@ export default class BattleScene extends Phaser.Scene {
 
         // Player movement with WASD (only if not dashing)
         if (!this.isDashing) {
-        if (this.wasdKeys.left.isDown) {
+            if (this.wasdKeys.left.isDown) {
+                console.log('[BattleScene] Left key pressed');
                 this.player.body.setVelocityX(-300);
-        } else if (this.wasdKeys.right.isDown) {
+            } else if (this.wasdKeys.right.isDown) {
+                console.log('[BattleScene] Right key pressed');
                 this.player.body.setVelocityX(300);
-        } else {
-            this.player.body.setVelocityX(0);
+            } else {
+                this.player.body.setVelocityX(0);
             }
         }
 
         // Player jump with W
         if (this.wasdKeys.up.isDown && this.player.body.touching.down) {
+            console.log('[BattleScene] Up key pressed - jumping');
             this.player.body.setVelocityY(-450);
         }
 
@@ -1889,6 +1717,12 @@ export default class BattleScene extends Phaser.Scene {
         if (this.hudManager) {
             this.hudManager.destroy();
             this.hudManager = null;
+        }
+        
+        // Destroy dialogue card
+        if (this.dialogueCard) {
+            this.dialogueCard.destroy();
+            this.dialogueCard = null;
         }
         
         // Destroy all enemies (no text displays to clean up - using DOM only)

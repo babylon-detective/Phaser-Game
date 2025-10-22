@@ -1,0 +1,175 @@
+/* DialogueCard CSS - Mobile-friendly dialogue system */
+
+#dialogue-card {
+    /* Ensure smooth animations */
+    will-change: transform;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+}
+
+#dialogue-card * {
+    box-sizing: border-box;
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 768px) {
+    #dialogue-card {
+        border-radius: 0 0 15px 15px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+        min-height: 200px !important;
+    }
+    
+    #dialogue-text {
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+        min-height: 120px !important;
+    }
+    
+    .dialogue-choice {
+        font-size: 14px !important;
+        padding: 8px 12px !important;
+    }
+}
+
+/* Desktop adjustments for better text display */
+@media (min-width: 769px) {
+    #dialogue-card {
+        min-height: 250px !important;
+    }
+    
+    #dialogue-text {
+        font-size: 18px !important;
+        line-height: 1.6 !important;
+        min-height: 150px !important;
+    }
+}
+
+/* Portrait canvas styling */
+#dialogue-portrait canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+}
+
+/* Choice hover effects */
+.dialogue-choice:hover {
+    transform: translateX(5px) !important;
+    background: rgba(255, 215, 0, 0.1) !important;
+}
+
+/* Enhanced choice styling */
+.dialogue-choice {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 6px !important;
+    padding: 8px 12px !important;
+    margin: 2px 0 !important;
+    transition: all 0.2s ease !important;
+}
+
+.dialogue-choice.selected {
+    background: rgba(255, 215, 0, 0.2) !important;
+    border-color: rgba(255, 215, 0, 0.5) !important;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3) !important;
+}
+
+/* Text area styling - no scrolling */
+#dialogue-text {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
+/* Animation keyframes */
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(-100%);
+    }
+}
+
+/* Portrait animation */
+@keyframes portraitGlow {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+    }
+}
+
+#dialogue-portrait {
+    animation: portraitGlow 2s ease-in-out infinite;
+}
+
+/* Choice selection animation */
+.dialogue-choice {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Help text styling */
+#dialogue-help {
+    font-family: 'Courier New', monospace;
+    opacity: 0.8;
+}
+
+#dialogue-help div {
+    margin: 0 5px;
+}
+
+/* Mobile touch feedback */
+@media (hover: none) and (pointer: coarse) {
+    .dialogue-choice:active {
+        transform: scale(0.95) !important;
+        background: rgba(255, 215, 0, 0.3) !important;
+    }
+}
+
+/* Enhanced gradient fade effect */
+#dialogue-card {
+    position: relative;
+    overflow: hidden;
+}
+
+#dialogue-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.3));
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Choice container enhancements */
+#dialogue-choices {
+    position: relative;
+    z-index: 2;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+/* Text area enhancements */
+#dialogue-text {
+    position: relative;
+    z-index: 2;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    color: white !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    display: block !important;
+}
