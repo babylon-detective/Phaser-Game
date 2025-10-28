@@ -330,7 +330,12 @@ export default class MenuScene extends Phaser.Scene {
         const xpPercent = (playerStats.experience / playerStats.experienceToNextLevel) * 100;
         const money = moneyManager.getMoney();
         
-        this.contentPanel.innerHTML = `
+        // Get party members from WorldScene's PartyManager
+        const partyMembers = this.worldScene && this.worldScene.partyManager 
+            ? this.worldScene.partyManager.partyMembers 
+            : [];
+        
+        let contentHTML = `
             <div style="font-size: 20px; font-weight: bold; margin-bottom: 15px; color: #4A90E2; border-bottom: 2px solid #4A90E2; padding-bottom: 10px;">
                 PLAYER STATS
             </div>
@@ -341,38 +346,103 @@ export default class MenuScene extends Phaser.Scene {
                 </div>
             </div>
             
-            <div style="margin-bottom: 12px;">
-                <div style="color: #FFD700; font-weight: bold; margin-bottom: 5px;">
-                    Level ${playerStats.level}
+            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #FFD700;">
+                👤 Main Character
+            </div>
+            
+            <div style="margin-bottom: 12px; padding: 10px; background: rgba(255, 0, 0, 0.1); border: 1px solid #ff0000; border-radius: 8px;">
+                <div style="margin-bottom: 8px;">
+                    <div style="color: #FFD700; font-weight: bold; margin-bottom: 5px;">
+                        Level ${playerStats.level}
+                    </div>
+                    <div style="font-size: 12px; color: #AAA; margin-bottom: 3px;">
+                        XP: ${playerStats.experience} / ${playerStats.experienceToNextLevel}
+                    </div>
+                    <div style="background: #333; height: 8px; border-radius: 4px; overflow: hidden;">
+                        <div id="xp-progress-bar" style="background: linear-gradient(90deg, #4A90E2, #00D9FF); height: 100%; width: ${xpPercent}%; transition: width 0.3s;"></div>
+                    </div>
                 </div>
-                <div style="font-size: 12px; color: #AAA; margin-bottom: 3px;">
-                    XP: ${playerStats.experience} / ${playerStats.experienceToNextLevel}
+
+                <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA;">Health:</span>
+                    <span style="color: #FF4757; font-weight: bold;">${playerStats.health} / ${playerStats.maxHealth}</span>
                 </div>
-                <div style="background: #333; height: 8px; border-radius: 4px; overflow: hidden;">
-                    <div id="xp-progress-bar" style="background: linear-gradient(90deg, #4A90E2, #00D9FF); height: 100%; width: ${xpPercent}%; transition: width 0.3s;"></div>
+
+                <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA;">Attack:</span>
+                    <span style="color: #FFA502; font-weight: bold;">${playerStats.attack}</span>
                 </div>
-            </div>
 
-            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #AAA;">Health:</span>
-                <span style="color: #FF4757; font-weight: bold;">${playerStats.health} / ${playerStats.maxHealth}</span>
-            </div>
+                <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA;">Defense:</span>
+                    <span style="color: #57E389; font-weight: bold;">${playerStats.defense}</span>
+                </div>
 
-            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #AAA;">Attack:</span>
-                <span style="color: #FFA502; font-weight: bold;">${playerStats.attack}</span>
-            </div>
-
-            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #AAA;">Defense:</span>
-                <span style="color: #57E389; font-weight: bold;">${playerStats.defense}</span>
-            </div>
-
-            <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #AAA;">Speed:</span>
-                <span style="color: #00D9FF; font-weight: bold;">${playerStats.speed}</span>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA;">Speed:</span>
+                    <span style="color: #00D9FF; font-weight: bold;">${playerStats.speed}</span>
+                </div>
             </div>
         `;
+        
+        // Add party members if any
+        if (partyMembers && partyMembers.length > 0) {
+            contentHTML += `
+                <div style="font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #00D9FF;">
+                    👥 Party Members (${partyMembers.length})
+                </div>
+            `;
+            
+            partyMembers.forEach((member, index) => {
+                const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+                
+                contentHTML += `
+                    <div style="margin-bottom: 12px; padding: 10px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 1px solid ${colorHex}; border-radius: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <div style="width: 12px; height: 12px; background: ${colorHex}; border-radius: 3px;"></div>
+                            <div style="font-size: 16px; font-weight: bold; color: ${colorHex};">${member.name.toUpperCase()}</div>
+                        </div>
+                        
+                        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #AAA;">Level:</span>
+                            <span style="color: #FFD700; font-weight: bold;">${member.stats.level}</span>
+                        </div>
+                        
+                        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #AAA;">Health:</span>
+                            <span style="color: #00ff00; font-weight: bold;">${member.stats.health}</span>
+                        </div>
+
+                        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #AAA;">Attack:</span>
+                            <span style="color: #ff9900; font-weight: bold;">${member.stats.attack}</span>
+                        </div>
+
+                        <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #AAA;">Defense:</span>
+                            <span style="color: #4A90E2; font-weight: bold;">${member.stats.defense}</span>
+                        </div>
+                        
+                        <div style="margin-top: 8px; padding: 8px; background: rgba(0, 0, 0, 0.2); border-radius: 5px;">
+                            <div style="font-size: 11px; color: #888; margin-bottom: 3px;">Abilities</div>
+                            <div style="font-size: 13px; color: ${colorHex};">${member.abilities ? member.abilities.join(', ') : 'None'}</div>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 8px; font-size: 11px; color: #888;">
+                            Battle Control: <kbd>${index + 2}</kbd> select | <kbd>${'UIOP'[index]}</kbd> ability
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            contentHTML += `
+                <div style="margin-top: 20px; text-align: center; padding: 20px; background: rgba(255, 255, 255, 0.05); border-radius: 8px; color: #888; font-style: italic;">
+                    No party members yet. Recruit allies by talking to them in battle!
+                </div>
+            `;
+        }
+        
+        this.contentPanel.innerHTML = contentHTML;
     }
     
     showSkillsContent() {

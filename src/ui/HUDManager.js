@@ -42,30 +42,18 @@ export default class HUDManager {
      * Create HUD elements for WorldScene
      */
     createWorldHUD() {
-        // Get player stats from GameStateManager
-        const playerStats = gameStateManager.getPlayerStats();
-
-        // Player Stats Panel - HP, Level, and Money
-        this.elements.statsPanel = this.createPanel('stats-panel', 'top-left');
-        const money = moneyManager.getMoney();
-        this.elements.statsPanel.innerHTML = `
-            <div class="hud-title">Player</div>
-            <div class="stat-row">
-                <span class="stat-label">HP:</span>
-                <div class="stat-bar-container">
-                    <div class="stat-bar health-bar" id="player-health-bar"></div>
-                </div>
-                <span class="stat-value" id="player-health-text">${playerStats.health}/${playerStats.maxHealth}</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">Level:</span>
-                <span class="stat-value" id="player-level">${playerStats.level}</span>
-            </div>
-            <div class="stat-row">
-                <span class="stat-label">💰</span>
-                <span class="stat-value" id="player-money" style="color: #FFD700;">${money}</span>
-            </div>
+        // Party Stats Panel (top-left) - Shows player + party members
+        this.elements.partyPanel = this.createPanel('party-panel', 'top-left');
+        this.elements.partyPanel.style.cssText += `
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            max-width: 80vw;
+            flex-wrap: wrap;
         `;
+        
+        // Will be populated by updateWorldPartyStats
+        this.updateWorldPartyStats();
 
         // Controls Help Panel
         this.elements.controlsPanel = this.createPanel('controls-panel', 'bottom-left');
@@ -73,7 +61,7 @@ export default class HUDManager {
             <div class="hud-title">Controls</div>
             <div class="control-row"><kbd>WASD</kbd> Move</div>
             <div class="control-row"><kbd>Shift</kbd> Sprint (Hold & Release)</div>
-            <div class="control-row"><kbd>M</kbd> Map (time continues)</div>
+            <div class="control-row"><kbd>TAB</kbd> Party Status</div>
             <div class="control-row"><kbd>/</kbd> Menu (time continues)</div>
             <div class="control-row"><kbd>Enter</kbd> Pause Game</div>
         `;
@@ -90,6 +78,81 @@ export default class HUDManager {
                 <span class="status-value" id="npcs-remaining">15</span>
             </div>
         `;
+    }
+    
+    /**
+     * Update party stats in WorldScene HUD
+     * Shows player + all party members horizontally
+     */
+    updateWorldPartyStats() {
+        if (!this.elements.partyPanel) return;
+        
+        const playerStats = gameStateManager.getPlayerStats();
+        const money = moneyManager.getMoney();
+        
+        // Get party members from WorldScene's PartyManager if available
+        const worldScene = this.scene;
+        const partyMembers = worldScene.partyManager && worldScene.partyManager.partyMembers 
+            ? worldScene.partyManager.partyMembers 
+            : [];
+        
+        // Build HTML for player + party members
+        let partyHTML = '';
+        
+        // Player stats (always first)
+        partyHTML += `
+            <div class="character-panel" style="background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 10px; padding: 10px; min-width: 140px;">
+                <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
+                    <div style="width: 10px; height: 10px; background: #ff0000; border-radius: 2px;"></div>
+                    <div class="hud-title" style="margin: 0; font-size: 13px;">PLAYER</div>
+                </div>
+                <div class="stat-row" style="font-size: 11px;">
+                    <span class="stat-label">HP:</span>
+                    <div class="stat-bar-container" style="flex: 1; height: 6px;">
+                        <div class="stat-bar health-bar" id="world-player-health-bar" style="width: ${(playerStats.health / playerStats.maxHealth) * 100}%;"></div>
+                    </div>
+                    <span class="stat-value" id="world-player-health" style="font-size: 10px;">${playerStats.health}/${playerStats.maxHealth}</span>
+                </div>
+                <div class="stat-row" style="font-size: 10px;">
+                    <span class="stat-label">Lvl:</span>
+                    <span class="stat-value" id="world-player-level">${playerStats.level}</span>
+                    <span class="stat-label" style="margin-left: 8px;">💰</span>
+                    <span class="stat-value" id="world-player-money" style="color: #FFD700;">${money}</span>
+                </div>
+            </div>
+        `;
+        
+        // Party member stats
+        partyMembers.forEach((member, index) => {
+            if (!member) return;
+            
+            const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+            const hpPercent = (member.stats.health / member.stats.health) * 100; // Current HP = max for now
+            
+            partyHTML += `
+                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px; padding: 10px; min-width: 140px;">
+                    <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
+                        <div style="width: 10px; height: 10px; background: ${colorHex}; border-radius: 2px;"></div>
+                        <div class="hud-title" style="margin: 0; font-size: 13px;">${member.name.toUpperCase()}</div>
+                    </div>
+                    <div class="stat-row" style="font-size: 11px;">
+                        <span class="stat-label">HP:</span>
+                        <div class="stat-bar-container" style="flex: 1; height: 6px;">
+                            <div class="stat-bar health-bar" id="world-party-${index}-health-bar" style="width: ${hpPercent}%; background: ${colorHex};"></div>
+                        </div>
+                        <span class="stat-value" id="world-party-${index}-health" style="font-size: 10px;">${member.stats.health}/${member.stats.health}</span>
+                    </div>
+                    <div class="stat-row" style="font-size: 10px;">
+                        <span class="stat-label">Lvl:</span>
+                        <span class="stat-value">${member.stats.level}</span>
+                        <span class="stat-label" style="margin-left: 8px;">Atk:</span>
+                        <span class="stat-value">${member.stats.attack}</span>
+                    </div>
+                </div>
+            `;
+        });
+        
+        this.elements.partyPanel.innerHTML = partyHTML;
     }
 
     /**
@@ -276,16 +339,9 @@ export default class HUDManager {
         if (sceneKey === 'BattleScene') {
             // In BattleScene, update the entire party panel
             this.updateBattlePartyStats();
-        } else {
-            // In WorldScene, update individual stats
-            // Update level
-            this.updatePlayerLevel(playerStats.level);
-            
-            // Update health
-            this.updatePlayerHealth(playerStats.health, playerStats.maxHealth);
-            
-            // Update money
-            this.updatePlayerMoney(moneyManager.getMoney());
+        } else if (sceneKey === 'WorldScene') {
+            // In WorldScene, update the entire party panel (includes player + recruited members)
+            this.updateWorldPartyStats();
         }
     }
     
