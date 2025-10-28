@@ -332,19 +332,37 @@ export default class PartyManager {
             return;
         }
         
-        // Hide the NPC's game object and indicator in the world
-        // (they're now following the player, so we don't want the original to be visible)
+        // IMPORTANT: Keep the NPC's game object and indicator VISIBLE
+        // They need to be visible to follow the player!
         if (npcData.gameObject) {
-            npcData.gameObject.setVisible(false);
-            npcData.gameObject.setActive(false);
+            npcData.gameObject.setVisible(true);
+            npcData.gameObject.setActive(true);
+            
+            // Position near player to start following
+            const player = this.scene.playerManager?.player;
+            if (player) {
+                const followIndex = this.partyMembers.length;
+                npcData.gameObject.setPosition(
+                    player.x - (followIndex * this.followDistance),
+                    player.y
+                );
+            }
         }
         
         if (npcData.indicator) {
-            npcData.indicator.setVisible(false);
-            npcData.indicator.setActive(false);
+            npcData.indicator.setVisible(true);
+            npcData.indicator.setActive(true);
+            
+            // Position indicator above the character
+            if (npcData.gameObject) {
+                npcData.indicator.setPosition(
+                    npcData.gameObject.x,
+                    npcData.gameObject.y - 40
+                );
+            }
         }
         
-        // Make absolutely sure the trigger zone is disabled and invisible
+        // Disable the trigger zone (no more battles with this NPC)
         if (npcData.triggerZone) {
             npcData.triggerZone.setVisible(false);
             npcData.triggerZone.setActive(false);
@@ -355,7 +373,7 @@ export default class PartyManager {
             }
         }
         
-        console.log(`[PartyManager] ${npcData.name} successfully hidden in WorldScene (now following player)`);
+        console.log(`[PartyManager] ${npcData.name} is now visible and following player in WorldScene`);
     }
 
     cleanup() {
