@@ -182,37 +182,12 @@ class DialogueCard {
         // Get the actual height of the text content
         const textHeight = this.textElement.scrollHeight;
         const textPadding = 40; // 20px padding on each side
-        const choicesHeight = this.choices && this.choices.length > 0 ? 120 : 0;
-        const helpHeight = 50; // Space for help text
-        const portraitSpace = 160; // Space for portrait and margins
+        // Let card auto-size naturally with min/max constraints
+        this.cardElement.style.height = 'auto';
+        this.cardElement.style.minHeight = '250px';
+        this.cardElement.style.maxHeight = '80vh';
         
-        // Calculate required height
-        const requiredHeight = textHeight + textPadding + choicesHeight + helpHeight + portraitSpace;
-        
-        // Ensure minimum height
-        const minHeight = this.isMobile ? 200 : 180;
-        const finalHeight = Math.max(requiredHeight, minHeight);
-        
-        // Don't exceed 80% of viewport height
-        const maxHeight = window.innerHeight * 0.8;
-        const adjustedHeight = Math.min(finalHeight, maxHeight);
-        
-        // Update card height
-        this.cardHeight = adjustedHeight;
-        this.cardElement.style.height = `${adjustedHeight}px`;
-        
-        // Position choices below the text content
-        if (this.choicesElement && this.choices.length > 0) {
-            const textBottom = this.textElement.offsetTop + this.textElement.offsetHeight;
-            this.choicesElement.style.top = `${textBottom + 20}px`;
-        }
-        
-        console.log('[DialogueCard] Adjusted card height:', {
-            textHeight,
-            requiredHeight,
-            finalHeight: adjustedHeight,
-            cardHeight: this.cardHeight
-        });
+        console.log('[DialogueCard] Card set to auto-size with natural flow');
     }
     
     /**
@@ -315,9 +290,8 @@ class DialogueCard {
             this.cardElement.remove();
         }
         
-        // Use the dynamically calculated height
+        // Create main card container with gradient fade - auto height
         const hasChoices = this.choices && this.choices.length > 0;
-        const dynamicHeight = this.cardHeight; // Already calculated with content in mind
         
         // Create main card container with gradient fade
         this.cardElement = document.createElement('div');
@@ -327,7 +301,9 @@ class DialogueCard {
             left: ${this.cardX}px;
             top: ${this.cardY}px;
             width: ${this.cardWidth}px;
-            height: ${dynamicHeight}px;
+            height: auto;
+            min-height: 250px;
+            max-height: 80vh;
             background: linear-gradient(180deg, 
                 rgba(20, 20, 40, 0.95) 0%, 
                 rgba(40, 20, 60, 0.8) 30%, 
@@ -365,32 +341,33 @@ class DialogueCard {
         this.textElement = document.createElement('div');
         this.textElement.id = 'dialogue-text';
         this.textElement.style.cssText = `
-            position: absolute;
-            left: 20px;
-            top: 20px;
-            width: ${this.textAreaWidth}px;
+            position: relative;
+            width: 100%;
             color: white;
             font-family: Arial, sans-serif;
             font-size: ${this.isMobile ? '16px' : '18px'};
             line-height: 1.6;
             background: rgba(0, 0, 0, 0.1);
             border-radius: 8px;
-            padding: 20px;
-            z-index: 10;
+            padding: 2px;
+            margin: 2px;
+            box-sizing: border-box;
             word-wrap: break-word;
             white-space: pre-wrap;
-            min-height: 100px;
         `;
         
         // Create choices container with dynamic positioning
         this.choicesElement = document.createElement('div');
         this.choicesElement.id = 'dialogue-choices';
+        // Calculate initial top position for choices (below text area)
+        const initialChoicesTop = this.portraitSize + 160; // Portrait size + text area top + some padding
         this.choicesElement.style.cssText = `
             position: absolute;
             left: 20px;
+            top: ${initialChoicesTop}px;
             width: ${this.textAreaWidth}px;
             height: ${hasChoices ? '120px' : '60px'};
-            display: flex;
+            display: ${hasChoices ? 'flex' : 'none'};
             flex-direction: column;
             gap: 8px;
             padding: 15px;
@@ -398,7 +375,7 @@ class DialogueCard {
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.2);
             z-index: 10;
-            margin-top: 20px;
+            overflow-y: auto;
         `;
         
         // Create help text with better positioning
@@ -664,6 +641,8 @@ class DialogueCard {
      */
     switchToPlayerChoices() {
         console.log('[DialogueCard] Switching to player portrait for choices');
+        console.log('[DialogueCard] Choices available:', this.choices);
+        console.log('[DialogueCard] Has choices element:', !!this.choicesElement);
         
         // Set player choice mode
         this.isPlayerChoiceMode = true;
@@ -690,20 +669,76 @@ class DialogueCard {
             return;
         }
         
-        // Update text to show player is choosing
+        console.log('[DialogueCard] About to show', this.choices.length, 'choices');
+        
+        // Integrate choices as plain text (no fancy cards)
         if (this.textElement) {
+            // Build simple plain text choices
+            let choicesHTML = '';
+            this.choices.forEach((choice, index) => {
+                const isSelected = index === this.selectedChoiceIndex;
+                const arrow = isSelected ? '▶' : '  ';
+                const textColor = isSelected ? '#FFD700' : '#CCCCCC';
+                const fontWeight = isSelected ? 'bold' : 'normal';
+                
+                choicesHTML += `
+                    <div class="dialogue-choice" data-choice-index="${index}" style="
+                        color: ${textColor};
+                        padding: 8px 0;
+                        margin: 0;
+                        cursor: pointer;
+                        font-size: 16px;
+                        line-height: 1.4;
+                        font-weight: ${fontWeight};
+                        ${!choice.available ? 'opacity: 0.5; cursor: not-allowed;' : ''}
+                    ">
+                        <span style="display: inline-block; width: 25px; color: ${textColor};">${arrow}</span>${choice.text}
+                    </div>
+                `;
+            });
+            
+            // Set entire content as simple text in ONE card
+            this.textElement.style.minHeight = '0px';
+            this.textElement.style.padding = '2px';
+            this.textElement.style.height = 'auto';
+            this.textElement.style.maxHeight = 'none';
+            this.textElement.style.overflowY = 'visible';
+            
             this.textElement.innerHTML = `
-                <div style="font-weight: bold; color: #FFD700; margin-bottom: 10px;">
-                    ${playerData.type} ${playerData.level ? `(Level ${playerData.level})` : ''}
+                <div style="color: #FFD700; margin: 0 0 15px 0; font-size: 14px; line-height: 1.2;">
+                    ${playerData.type} ${playerData.level ? `(Lv ${playerData.level})` : ''} - What will you do?
                 </div>
-                <div style="margin-bottom: 15px; line-height: 1.6; color: #AAA; font-style: italic;">
-                    What will you do?
+                ${choicesHTML}
+                <div style="text-align: center; margin-top: 15px; color: #888; font-size: 12px;">
+                    W/S • ] confirm • ESC cancel
                 </div>
             `;
+            
+            // Hide the separate choices element since we integrated it
+            if (this.choicesElement) {
+                this.choicesElement.style.display = 'none';
+            }
+            
+            // Add click handlers to integrated choices
+            setTimeout(() => {
+                const choiceElements = this.textElement.querySelectorAll('.dialogue-choice');
+                choiceElements.forEach((element, index) => {
+                    const choice = this.choices[index];
+                    if (choice && choice.available) {
+                        element.style.cursor = 'pointer';
+                        element.addEventListener('mouseenter', () => {
+                            this.selectedChoiceIndex = index;
+                            this.updateChoiceSelection();
+                        });
+                        element.addEventListener('click', () => {
+                            this.selectChoice(choice);
+                        });
+                    }
+                });
+            }, 10);
+            
+            console.log('[DialogueCard] Choices integrated as plain text');
         }
-        
-        // Show choices
-        this.updateChoices(this.choices);
     }
 
     /**
@@ -731,6 +766,10 @@ class DialogueCard {
             }, 10);
             return;
         }
+        
+        // Restore text element to normal size for NPC dialogue
+        this.textElement.style.minHeight = '100px'; // Restore normal height
+        this.textElement.style.padding = '2px'; // Restore minimal padding
         
         const currentParagraph = this.dialogueParagraphs[this.currentParagraphIndex];
         const isLastParagraph = this.currentParagraphIndex >= this.dialogueParagraphs.length - 1;
@@ -795,14 +834,30 @@ class DialogueCard {
      * Update dialogue choices
      */
     updateChoices(choices) {
+        console.log('[DialogueCard] updateChoices called with', choices.length, 'choices');
         this.choicesElement.innerHTML = '';
         
         if (choices.length === 0) {
+            console.log('[DialogueCard] No choices, hiding choices element');
             this.choicesElement.style.display = 'none';
             return;
         }
         
+        console.log('[DialogueCard] Setting choices element to flex');
         this.choicesElement.style.display = 'flex';
+        this.choicesElement.style.visibility = 'visible';
+        this.choicesElement.style.opacity = '1';
+        
+        console.log('[DialogueCard] Choices element styles:', {
+            display: this.choicesElement.style.display,
+            visibility: this.choicesElement.style.visibility,
+            opacity: this.choicesElement.style.opacity,
+            top: this.choicesElement.style.top,
+            left: this.choicesElement.style.left,
+            width: this.choicesElement.style.width,
+            height: this.choicesElement.style.height,
+            zIndex: this.choicesElement.style.zIndex
+        });
         
         choices.forEach((choice, index) => {
             const choiceElement = document.createElement('div');
@@ -849,25 +904,46 @@ class DialogueCard {
     }
     
     /**
-     * Update choice selection visual state
+     * Update choice selection visual state (plain text style)
      */
     updateChoiceSelection() {
-        const choiceElements = this.choicesElement.querySelectorAll('.dialogue-choice');
+        // Check both separate choicesElement and integrated textElement
+        let choiceElements = null;
+        
+        if (this.choicesElement && this.choicesElement.style.display !== 'none') {
+            // Old system: separate choices element
+            choiceElements = this.choicesElement.querySelectorAll('.dialogue-choice');
+        } else if (this.textElement) {
+            // New system: integrated into text element
+            choiceElements = this.textElement.querySelectorAll('.dialogue-choice');
+        }
+        
+        if (!choiceElements || choiceElements.length === 0) {
+            console.log('[DialogueCard] No choice elements found to update');
+            return;
+        }
+        
         choiceElements.forEach((element, index) => {
-            const arrow = index === this.selectedChoiceIndex ? '>' : ' ';
             const arrowSpan = element.querySelector('span');
-            const choiceText = element.querySelector('div > div:first-child');
             
             if (index === this.selectedChoiceIndex) {
+                // Selected: gold and bold
                 element.classList.add('selected');
                 element.style.color = '#FFD700';
-                if (arrowSpan) arrowSpan.textContent = '>';
-                if (arrowSpan) arrowSpan.style.color = '#FFD700';
+                element.style.fontWeight = 'bold';
+                if (arrowSpan) {
+                    arrowSpan.textContent = '▶';
+                    arrowSpan.style.color = '#FFD700';
+                }
             } else {
+                // Not selected: light gray and normal
                 element.classList.remove('selected');
-                element.style.color = 'white';
-                if (arrowSpan) arrowSpan.textContent = ' ';
-                if (arrowSpan) arrowSpan.style.color = 'transparent';
+                element.style.color = '#CCCCCC';
+                element.style.fontWeight = 'normal';
+                if (arrowSpan) {
+                    arrowSpan.textContent = '  '; // Two spaces for alignment
+                    arrowSpan.style.color = '#CCCCCC';
+                }
             }
         });
     }

@@ -17,42 +17,84 @@ export default class BattleScene extends Phaser.Scene {
         this.escapeKey = null;
         this.wasdKeys = null;
         this.isReturning = false;
-        this.attackKey = null;
-        this.isAttacking = false;
+        
+        // Action Point System
+        this.maxAP = 20; // Much smaller AP pool
+        this.currentAP = 20;
+        this.apGauge = null;
+        this.apGaugeBackground = null;
+        this.apGaugeText = null;
+        this.isChargingAP = false;
+        this.chargeAPRate = 8; // AP per second while charging (faster recharge)
+        this.movementAPCost = 2; // AP per second while moving (much higher cost)
+        this.dashAPCost = 4; // AP per second while dashing (double movement cost)
+        this.isMoving = false;
+        this.isDashingAP = false;
+        this.enemyTurnTriggeredWhileCharging = false;
+        
+        // Melee Attack & Combo System
+        this.rangeIndicatorRadius = 150; // Visual range indicator size
+        this.maxMeleeDistance = 195; // Maximum distance for melee attack (when yellow circle appears = 150 * 1.3)
+        this.meleeAPCost = 3; // AP cost per melee attack
+        this.comboWindow = 800; // Time window for combo in ms
+        this.comboCooldown = 200; // Cooldown between attacks in combo
+        this.comboCount = 0;
+        this.lastComboTime = 0;
+        this.canCombo = true;
+        this.rangeIndicators = []; // Visual range indicators
+        
+        // Character System
+        this.partyMembers = []; // Array of all party members (data)
+        this.partyCharacters = []; // Array of party character game objects
+        this.activeCharacterIndex = -1; // Currently controlled character (-1 = all, 0 = player, 1+ = party members)
+        this.activeCharacter = null; // Reference to active character object
+        this.characterSwitchCooldown = 0;
+        this.characterSwitchDelay = 300; // ms between switches
+        this.groupMovementMode = true; // true = all move together (key 0), false = individual control (keys 1-4)
+        
+        // Face Button Controls (U/I/O/P for each character)
+        this.faceButtons = {
+            u: null, // Character 1 ability
+            i: null, // Character 2 ability  
+            o: null, // Character 3 ability
+            p: null  // Character 4 ability
+        };
+        
+        // Character Abilities and AP Costs
+        this.characterAbilities = {
+            basicAttack: { apCost: 8, damage: 20 },
+            specialAttack: { apCost: 12, damage: 35 },
+            spell: { apCost: 10, damage: 30 },
+            item: { apCost: 5, damage: 0 }
+        };
+        
+        // Turn-based System
+        this.isPlayerTurn = true;
+        this.turnPhase = 'action'; // 'action', 'enemy', 'transition'
+        this.enemyActionQueue = [];
+        this.enemyActionDelay = 1000; // ms delay before enemy actions
+        this.enemyTurnTimeout = null; // Timeout to prevent infinite enemy turns
+        
+        // NPC AI Active Movement (all enemy types)
+        this.npcMovementSpeed = 150; // Base NPC movement speed
+        this.npcMovementData = new Map(); // Track each NPC's movement state
+        this.npcAttackRange = 180; // Range at which NPCs can melee attack
+        this.npcAttackCooldown = 1500; // ms between NPC attacks
+        
+        // Player Health System (now tracked in DOM HUD only)
+        this.maxHP = 100;
+        this.currentHP = 100;
+        
+        // Attack properties (used by combo system)
         this.attackDuration = 50;
-        this.attackSprite = null;
         this.attackOffset = 150;
         this.attackWidth = 200;
         this.attackHeight = 40;
-        // Secondary attack properties
-        this.secondaryAttackKey = null;
-        this.isSecondaryAttacking = false;
-        this.secondaryAttackDuration = 1500;
-        this.projectileSpeed = 600;
-        this.projectileSize = 45;
-        this.projectileCount = 0;
-        this.maxProjectiles = 3;
-        this.projectileCooldown = 300;
-        this.projectileResetCooldown = 800;
-        this.canShootProjectile = true;
-        this.projectiles = [];
-        // Charging properties
-        this.isCharging = false;
-        this.chargeTime = 0;
-        this.maxChargeTime = 800;
-        this.chargeBar = null;
-        this.chargeBarBackground = null;
-        this.chargeStartTime = 0;
-        this.chargeThreshold = 100;
-        this.isKeyPressed = false; // Track if key is currently pressed
-        // Charged projectile properties
-        this.chargedProjectileSpeed = 800;
-        this.chargedProjectileSize = 90;
         // Dash properties
         this.dashKey = null;
         this.isDashing = false;
-        this.dashSpeed = 600;
-        this.dashDuration = 150;
+        this.dashSpeed = 1200; // Double the original speed (was 600)
+        this.dashDuration = 300; // Double the original duration (was 150)
         this.dashCooldown = 50;
         this.canDash = true;
         this.enemyHealthTexts = []; // Array to store health display texts
@@ -67,6 +109,9 @@ export default class BattleScene extends Phaser.Scene {
         this.dialogueCard = null;
         this.dialogueChoice = null; // 'fight', 'negotiate_money', 'negotiate_item', 'flee'
         this.isDialogueActive = false;
+        
+        // Visual ground
+        this.checkerboardGround = null;
     }
 
     init(data) {
@@ -80,6 +125,7 @@ export default class BattleScene extends Phaser.Scene {
 
         this.playerData = data.playerData;
         this.npcDataArray = data.npcDataArray;
+        this.partyMembersData = data.partyMembers || [];
         
         // Ensure npcDataArray is an array
         if (!Array.isArray(this.npcDataArray)) {
@@ -96,6 +142,7 @@ export default class BattleScene extends Phaser.Scene {
         console.log('[BattleScene] Initialized with:', {
             playerData: this.playerData,
             npcDataArray: this.npcDataArray,
+            partyMembers: this.partyMembersData,
             worldPosition: this.worldPosition
         });
     }
@@ -138,21 +185,18 @@ export default class BattleScene extends Phaser.Scene {
         
         // Initialize/reset all state variables to ensure clean battle start
         this.isReturning = false;
-        this.isAttacking = false;
-        this.isSecondaryAttacking = false;
-        this.isCharging = false;
         this.isDashing = false;
         this.canDash = true;
-        this.canShootProjectile = true;
-        this.isKeyPressed = false;
-        this.projectileCount = 0;
-        this.chargeTime = 0;
-        this.chargeStartTime = 0;
         this.isVictorySequence = false;
         this.isBattleActive = true;
         this.defeatedEnemyIds = []; // Reset defeated enemy tracking
         this.totalXpEarned = 0; // Reset XP tracking
         this.defeatedEnemiesData = []; // Reset defeated enemies data
+        
+        // Reset combo system
+        this.comboCount = 0;
+        this.lastComboTime = 0;
+        this.canCombo = true;
 
         // Set up background color to ensure WorldScene is hidden
         this.cameras.main.setBackgroundColor('#000000');
@@ -161,14 +205,18 @@ export default class BattleScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, this.cameras.main.width, this.cameras.main.height);
         this.physics.world.gravity.y = 600;
 
-        // Create ground platform (in the lower part of the screen)
+        // Create Mac System 7 style checkerboard ground
         const groundY = this.cameras.main.height * 0.8;
+        this.createCheckerboardGround(groundY);
+        
+        // Create invisible collision ground at the same level
         this.ground = this.add.rectangle(
             this.cameras.main.width / 2,
             groundY,
             this.cameras.main.width,
             10,
-            0x00ff00
+            0x00ff00,
+            0 // Invisible
         );
         this.physics.add.existing(this.ground, true);
 
@@ -188,6 +236,9 @@ export default class BattleScene extends Phaser.Scene {
 
         // Add collision between player and ground
         this.physics.add.collider(this.player, this.ground);
+        
+        // Create party member characters
+        this.createPartyCharacters(groundY);
 
         // Initialize input keys
         this.initializeInput();
@@ -246,6 +297,46 @@ export default class BattleScene extends Phaser.Scene {
 
             // Add to enemies array
             this.enemies.push(enemy);
+            
+            // Initialize NPC movement AI for ALL enemy types
+            // Different behaviors based on NPC type
+            let aiConfig = {
+                direction: 1, // Start moving right (toward player typically)
+                changeTimer: 0,
+                changeInterval: Math.random() * 2000 + 1000, // Change direction every 1-3 seconds
+                isMoving: false,
+                lastAttackTime: 0,
+                hasBeenAttacked: false
+            };
+            
+            // Configure AI state based on NPC type
+            switch (npcData.type) {
+                case 'GUARD':
+                    aiConfig.aiState = 'idle'; // Guards: idle -> combat -> defensive
+                    aiConfig.aggressiveness = 1.0; // Full aggression
+                    break;
+                case 'MERCHANT':
+                    aiConfig.aiState = 'defensive'; // Merchants stay defensive
+                    aiConfig.aggressiveness = 0.3; // Less aggressive
+                    break;
+                case 'VILLAGER':
+                    aiConfig.aiState = 'idle'; // Villagers start idle
+                    aiConfig.aggressiveness = 0.5; // Moderate
+                    break;
+                default:
+                    // Recruitable NPCs and others
+                    if (npcData.isRecruitableCharacter) {
+                        aiConfig.aiState = 'defensive'; // Recruitable chars are defensive
+                        aiConfig.aggressiveness = 0.6; // Moderate-defensive
+                    } else {
+                        aiConfig.aiState = 'idle';
+                        aiConfig.aggressiveness = 0.8;
+                    }
+                    break;
+            }
+            
+            this.npcMovementData.set(enemy, aiConfig);
+            console.log(`[BattleScene] Initialized AI for ${npcData.type}:`, aiConfig);
 
             // NPC stats are now only shown in DOM (HUD), not in Phaser layer
         });
@@ -261,6 +352,16 @@ export default class BattleScene extends Phaser.Scene {
 
         // Create charge bar (initially hidden)
         this.createChargeBar();
+        
+        // Create AP gauge
+        this.createAPGauge();
+        
+        // Initialize party system
+        this.initializeParty();
+        
+        // Reset AP to full at start of battle (HP tracked in DOM HUD)
+        this.resetAP();
+        this.currentHP = this.maxHP; // Reset HP silently
 
         // Set up camera
         this.cameras.main.startFollow(this.player);
@@ -278,6 +379,9 @@ export default class BattleScene extends Phaser.Scene {
         
         // Initialize dialogue card system
         this.dialogueCard = new DialogueCard(this);
+        
+        // Create range indicators for each enemy
+        this.createRangeIndicators();
 
         // Set up scene event listeners for HUD management
         this.events.on('shutdown', () => {
@@ -288,6 +392,184 @@ export default class BattleScene extends Phaser.Scene {
             }
         });
     }
+    
+    createRangeIndicators() {
+        console.log('[BattleScene] Creating range indicators for enemies');
+        
+        // Clear existing indicators
+        this.rangeIndicators.forEach(indicator => indicator.destroy());
+        this.rangeIndicators = [];
+        
+        // Create a range indicator for each enemy
+        this.enemies.forEach(enemy => {
+            const indicator = this.add.circle(0, 0, this.rangeIndicatorRadius, 0x00ff00, 0);
+            indicator.setStrokeStyle(4, 0x00ff00, 0); // Start invisible, thicker line
+            indicator.setDepth(0); // Behind everything
+            this.rangeIndicators.push(indicator);
+        });
+        
+        console.log(`[BattleScene] Created ${this.rangeIndicators.length} range indicators (radius: ${this.rangeIndicatorRadius})`);
+    }
+    
+    createPartyCharacters(groundY) {
+        console.log('[BattleScene] Creating party characters');
+        
+        if (!this.partyMembersData || this.partyMembersData.length === 0) {
+            console.log('[BattleScene] No party members to create');
+            return;
+        }
+        
+        const playerX = this.cameras.main.width * 0.3;
+        const spacing = 80; // Space between characters
+        
+        this.partyMembersData.forEach((memberData, index) => {
+            // Position party members to the left of player
+            const characterX = playerX - (spacing * (index + 1));
+            const characterY = groundY - 150;
+            
+            // Create character game object (gray rectangle like player)
+            const character = this.add.rectangle(
+                characterX,
+                characterY,
+                96,
+                192,
+                memberData.color
+            );
+            
+            this.physics.add.existing(character);
+            character.body.setBounce(0.2);
+            character.body.setCollideWorldBounds(true);
+            character.body.setSize(96, 192);
+            
+            // Add collision with ground
+            this.physics.add.collider(character, this.ground);
+            
+            // Create direction indicator with member's unique color
+            const indicator = this.add.rectangle(
+                characterX,
+                characterY - 40,
+                10,
+                10,
+                memberData.indicatorColor
+            );
+            indicator.setDepth(1000);
+            
+            // Store character data
+            character.memberData = {
+                ...memberData,
+                indicator: indicator,
+                abilities: memberData.abilities || [],
+                currentHP: memberData.stats.health,
+                maxHP: memberData.stats.health
+            };
+            
+            this.partyCharacters.push(character);
+            
+            console.log(`[BattleScene] Created party character: ${memberData.name} at position ${index + 1}`);
+        });
+        
+        console.log(`[BattleScene] Total party size: ${this.partyCharacters.length + 1} (Player + ${this.partyCharacters.length} members)`);
+    }
+    
+    createCheckerboardGround(groundY) {
+        console.log('[BattleScene] Creating Mac System 7 style checkerboard ground');
+        
+        const width = this.cameras.main.width;
+        const height = this.cameras.main.height;
+        
+        // Create graphics object for the checkerboard
+        const checkerboard = this.add.graphics();
+        checkerboard.setDepth(-10); // Behind everything
+        
+        // Mac System 7 style colors (light and dark gray)
+        const lightGray = 0xCCCCCC;
+        const darkGray = 0x888888;
+        const horizonColor = 0x999999;
+        
+        // Define perspective parameters
+        const horizonY = groundY - 150; // Horizon line above the ground
+        const rows = 20; // Number of rows for smooth perspective
+        const tilesPerRow = 20; // More tiles for better coverage
+        
+        // Draw each row from horizon (far) to bottom (near)
+        for (let row = 0; row < rows; row++) {
+            // Calculate normalized depth (0 = horizon/far, 1 = near/bottom)
+            const normalizedDepth = row / (rows - 1);
+            
+            // Use exponential curve for more realistic depth perception
+            const depthCurve = Math.pow(normalizedDepth, 1.8);
+            
+            // Calculate Y positions with non-linear perspective
+            const currentY = horizonY + (height - horizonY) * depthCurve;
+            const nextDepth = Math.min(1, (row + 1) / (rows - 1));
+            const nextDepthCurve = Math.pow(nextDepth, 1.8);
+            const nextY = horizonY + (height - horizonY) * nextDepthCurve;
+            
+            // Each row spans FULL WIDTH from left (0) to right (width) edge
+            // No vanishing point - tiles always go edge to edge
+            const rowLeft = 0;
+            const rowRight = width;
+            const rowWidth = rowRight - rowLeft;
+            const tileWidth = rowWidth / tilesPerRow;
+            
+            // Next row also spans full width
+            const nextRowLeft = 0;
+            const nextRowRight = width;
+            const nextRowWidth = nextRowRight - nextRowLeft;
+            const nextTileWidth = nextRowWidth / tilesPerRow;
+            
+            // Draw each tile in this row
+            for (let col = 0; col < tilesPerRow; col++) {
+                // Classic checkerboard pattern
+                const isLight = (row + col) % 2 === 0;
+                const color = isLight ? lightGray : darkGray;
+                
+                // Calculate tile positions - tiles span edge to edge
+                const tileX = rowLeft + col * tileWidth;
+                const nextTileX = nextRowLeft + col * nextTileWidth;
+                
+                // Draw rectangle (not trapezoid since no perspective narrowing)
+                checkerboard.fillStyle(color, 1);
+                checkerboard.beginPath();
+                checkerboard.moveTo(tileX, currentY); // Top left
+                checkerboard.lineTo(tileX + tileWidth, currentY); // Top right
+                checkerboard.lineTo(nextTileX + nextTileWidth, nextY); // Bottom right
+                checkerboard.lineTo(nextTileX, nextY); // Bottom left
+                checkerboard.closePath();
+                checkerboard.fillPath();
+                
+                // Add outline for Mac System 7 look (thinner at distance)
+                const lineThickness = Math.max(0.5, normalizedDepth * 1.5);
+                const lineAlpha = 0.15 + normalizedDepth * 0.15;
+                checkerboard.lineStyle(lineThickness, 0x000000, lineAlpha);
+                checkerboard.strokePath();
+            }
+        }
+        
+        // Draw horizon line (classic Mac System 7 style)
+        checkerboard.lineStyle(3, horizonColor, 1);
+        checkerboard.beginPath();
+        checkerboard.moveTo(0, horizonY);
+        checkerboard.lineTo(width, horizonY);
+        checkerboard.strokePath();
+        
+        // Add subtle gradient fade to horizon (atmospheric depth)
+        const gradientSteps = 5;
+        for (let i = 0; i < gradientSteps; i++) {
+            const alpha = (gradientSteps - i) / gradientSteps * 0.1;
+            const offsetY = i * 3;
+            checkerboard.lineStyle(2, 0x000000, alpha);
+            checkerboard.beginPath();
+            checkerboard.moveTo(0, horizonY - offsetY);
+            checkerboard.lineTo(width, horizonY - offsetY);
+            checkerboard.strokePath();
+        }
+        
+        // Store reference for cleanup
+        this.checkerboardGround = checkerboard;
+        
+        console.log('[BattleScene] Pseudo-3D checkerboard ground created (edge-to-edge coverage)');
+    }
 
     initializeInput() {
         console.log('[BattleScene] Initializing input controls');
@@ -297,8 +579,6 @@ export default class BattleScene extends Phaser.Scene {
 
         // Initialize keyboard controls
         this.escapeKey = this.input.keyboard.addKey('ESC');
-        this.attackKey = this.input.keyboard.addKey('RIGHT_BRACKET');
-        this.secondaryAttackKey = this.input.keyboard.addKey('LEFT_BRACKET');
         this.dashKey = this.input.keyboard.addKey('SHIFT');
         this.wasdKeys = this.input.keyboard.addKeys({
             up: 'W',
@@ -306,51 +586,37 @@ export default class BattleScene extends Phaser.Scene {
             left: 'A',
             right: 'D'
         });
+        
+        // Character switching controls (old Q/E system - can be removed if not needed)
+        this.characterSwitchKeys = this.input.keyboard.addKeys({
+            switchLeft: 'Q',
+            switchRight: 'E'
+        });
+        
+        // NEW: Number key controls for direct character selection
+        this.numberKeys = this.input.keyboard.addKeys({
+            key0: 'ZERO',   // Group movement mode
+            key1: 'ONE',    // Control player
+            key2: 'TWO',    // Control party member 1
+            key3: 'THREE',  // Control party member 2
+            key4: 'FOUR'    // Control party member 3
+        });
+        
+        // Face button controls for character abilities
+        this.faceButtons = this.input.keyboard.addKeys({
+            u: 'U',
+            i: 'I', 
+            o: 'O',
+            p: 'P'
+        });
+        
+        // AP charging control
+        this.chargeAPKey = this.input.keyboard.addKey('EQUALS');
+        // Alternative key binding for testing
+        this.chargeAPKeyAlt = this.input.keyboard.addKey(187); // = key code
 
-        // Add key press listeners
-        this.attackListener = (event) => {
-            if (event.key === ']') {
-                // Don't attack if we're in enemy selection mode
-                if (this.isEnemySelectionMode) {
-                    return;
-                }
-                console.log('[BattleScene] Right bracket detected!');
-                this.attack();
-            }
-        };
-        this.input.keyboard.on('keydown', this.attackListener);
-
-        this.chargeStartListener = (event) => {
-            if (event.key === '[' && !this.isKeyPressed) {
-                // Don't charge during enemy selection mode
-                if (this.isEnemySelectionMode) {
-                    return;
-                }
-                this.isKeyPressed = true;
-                this.chargeStartTime = this.time.now;
-                console.log('[BattleScene] Left bracket pressed, starting timer');
-            }
-        };
-        this.input.keyboard.on('keydown', this.chargeStartListener);
-
-        this.chargeEndListener = (event) => {
-            if (event.key === '[' && this.isKeyPressed) {
-                // Don't process charge release during enemy selection mode
-                if (this.isEnemySelectionMode) {
-                    return;
-                }
-                this.isKeyPressed = false;
-                const pressDuration = this.time.now - this.chargeStartTime;
-                console.log('[BattleScene] Left bracket released, duration:', pressDuration);
-                
-                if (pressDuration < this.chargeThreshold) {
-                    this.secondaryAttack();
-                } else if (this.isCharging) {
-                    this.releaseCharge();
-                }
-            }
-        };
-        this.input.keyboard.on('keyup', this.chargeEndListener);
+        // Note: [ and ] keys reserved for confirmation/selection in menus
+        // Attacks are now handled by U/I/O/P face buttons only
 
         // Add / key handler for BattleMenuScene
         this.slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
@@ -366,20 +632,6 @@ export default class BattleScene extends Phaser.Scene {
 
     cleanupInput() {
         console.log('[BattleScene] Cleaning up input controls');
-        
-        // Remove all keyboard listeners
-        if (this.attackListener) {
-            this.input.keyboard.off('keydown', this.attackListener);
-            this.attackListener = null;
-        }
-        if (this.chargeStartListener) {
-            this.input.keyboard.off('keydown', this.chargeStartListener);
-            this.chargeStartListener = null;
-        }
-        if (this.chargeEndListener) {
-            this.input.keyboard.off('keyup', this.chargeEndListener);
-            this.chargeEndListener = null;
-        }
 
         // Remove all keys
         if (this.slashKey) {
@@ -390,14 +642,6 @@ export default class BattleScene extends Phaser.Scene {
             this.escapeKey.destroy();
             this.escapeKey = null;
         }
-        if (this.attackKey) {
-            this.attackKey.destroy();
-            this.attackKey = null;
-        }
-        if (this.secondaryAttackKey) {
-            this.secondaryAttackKey.destroy();
-            this.secondaryAttackKey = null;
-        }
         if (this.dashKey) {
             this.dashKey.destroy();
             this.dashKey = null;
@@ -407,6 +651,26 @@ export default class BattleScene extends Phaser.Scene {
                 if (key) key.destroy();
             });
             this.wasdKeys = null;
+        }
+        if (this.characterSwitchKeys) {
+            Object.values(this.characterSwitchKeys).forEach(key => {
+                if (key) key.destroy();
+            });
+            this.characterSwitchKeys = null;
+        }
+        if (this.faceButtons) {
+            Object.values(this.faceButtons).forEach(key => {
+                if (key) key.destroy();
+            });
+            this.faceButtons = null;
+        }
+        if (this.chargeAPKey) {
+            this.chargeAPKey.destroy();
+            this.chargeAPKey = null;
+        }
+        if (this.chargeAPKeyAlt) {
+            this.chargeAPKeyAlt.destroy();
+            this.chargeAPKeyAlt = null;
         }
 
         // Remove all keyboard listeners
@@ -420,7 +684,19 @@ export default class BattleScene extends Phaser.Scene {
         // Pause battle scene
         this.scene.pause();
         
-        // Launch BattleMenuScene with enemy data
+        // Prepare party data for menu
+        const partyData = this.partyCharacters.map(character => ({
+            id: character.memberData.id,
+            name: character.memberData.name,
+            level: character.memberData.stats.level,
+            currentHP: character.memberData.currentHP,
+            maxHP: character.memberData.maxHP,
+            indicatorColor: character.memberData.indicatorColor
+        }));
+        
+        console.log('[BattleScene] Opening menu with party:', partyData);
+        
+        // Launch BattleMenuScene with enemy data and party data
         this.scene.launch('BattleMenuScene', {
             enemies: this.enemies.map(enemy => ({
                 id: enemy.enemyData.id,
@@ -428,7 +704,8 @@ export default class BattleScene extends Phaser.Scene {
                 level: enemy.enemyData.level,
                 health: enemy.enemyData.health,
                 maxHealth: enemy.enemyData.maxHealth
-            }))
+            })),
+            partyMembers: partyData
         });
     }
 
@@ -524,16 +801,30 @@ export default class BattleScene extends Phaser.Scene {
         `;
         
         const selectedEnemy = this.enemies[this.selectedEnemyIndex];
+        const isRecruitable = selectedEnemy.enemyData.isRecruitableCharacter || false;
+        
+        // Different styling for recruitable NPCs
+        const titleColor = isRecruitable ? '#00ff88' : 'gold';
+        const titleIcon = isRecruitable ? '✨' : '💬';
+        const titleText = isRecruitable ? 'RECRUITABLE CHARACTER' : 'SELECT ENEMY TO TALK TO';
+        
         overlay.innerHTML = `
-            <div style="margin-bottom: 15px; color: gold; font-weight: bold; font-size: 24px;">
-                💬 SELECT ENEMY TO TALK TO
+            <div style="margin-bottom: 15px; color: ${titleColor}; font-weight: bold; font-size: 24px;">
+                ${titleIcon} ${titleText}
             </div>
             <div style="margin-bottom: 15px; font-size: 20px;">
-                <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
+                <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.name || selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
             </div>
             <div style="margin-bottom: 10px; color: #4A90E2;">
                 Level ${selectedEnemy.enemyData.level} | HP: ${selectedEnemy.enemyData.health}/${selectedEnemy.enemyData.maxHealth}
             </div>
+            ${isRecruitable ? `
+                <div style="margin-top: 10px; padding: 10px; background: rgba(0, 255, 136, 0.2); border-radius: 8px; border: 1px solid #00ff88;">
+                    <div style="font-size: 14px; color: #00ff88; font-style: italic;">
+                        This character can join your party!
+                    </div>
+                </div>
+            ` : ''}
             <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
                 A/D - Switch Enemy | ] - Confirm | ESC - Cancel
             </div>
@@ -546,16 +837,30 @@ export default class BattleScene extends Phaser.Scene {
         const overlay = document.getElementById('enemy-selection-ui');
         if (overlay && this.enemies[this.selectedEnemyIndex]) {
             const selectedEnemy = this.enemies[this.selectedEnemyIndex];
+            const isRecruitable = selectedEnemy.enemyData.isRecruitableCharacter || false;
+            
+            // Different styling for recruitable NPCs
+            const titleColor = isRecruitable ? '#00ff88' : 'gold';
+            const titleIcon = isRecruitable ? '✨' : '💬';
+            const titleText = isRecruitable ? 'RECRUITABLE CHARACTER' : 'SELECT ENEMY TO TALK TO';
+            
             overlay.innerHTML = `
-                <div style="margin-bottom: 15px; color: gold; font-weight: bold; font-size: 24px;">
-                    💬 SELECT ENEMY TO TALK TO
+                <div style="margin-bottom: 15px; color: ${titleColor}; font-weight: bold; font-size: 24px;">
+                    ${titleIcon} ${titleText}
                 </div>
                 <div style="margin-bottom: 15px; font-size: 20px;">
-                    <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
+                    <span style="color: #FFD700;">▶</span> ${selectedEnemy.enemyData.name || selectedEnemy.enemyData.type} <span style="color: #FFD700;">◀</span>
                 </div>
                 <div style="margin-bottom: 10px; color: #4A90E2;">
                     Level ${selectedEnemy.enemyData.level} | HP: ${selectedEnemy.enemyData.health}/${selectedEnemy.enemyData.maxHealth}
                 </div>
+                ${isRecruitable ? `
+                    <div style="margin-top: 10px; padding: 10px; background: rgba(0, 255, 136, 0.2); border-radius: 8px; border: 1px solid #00ff88;">
+                        <div style="font-size: 14px; color: #00ff88; font-style: italic;">
+                            This character can join your party!
+                        </div>
+                    </div>
+                ` : ''}
                 <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
                     A/D - Switch Enemy | ] - Confirm | ESC - Cancel
                 </div>
@@ -704,14 +1009,27 @@ export default class BattleScene extends Phaser.Scene {
         // Don't pause the scene - just set dialogue active flag
         // The scene will handle input differently when dialogue is active
         
-        // Launch dialogue manager with enemy data
+        // Launch dialogue manager with enemy data - include ALL relevant data
         const npcData = {
             id: enemy.enemyData.id,
             type: enemy.enemyData.type,
+            name: enemy.enemyData.name || enemy.enemyData.type,
             level: enemy.enemyData.level,
             health: enemy.enemyData.health,
-            maxHealth: enemy.enemyData.maxHealth
+            maxHealth: enemy.enemyData.maxHealth,
+            // IMPORTANT: Pass through recruitable flag and related data
+            isRecruitableCharacter: enemy.enemyData.isRecruitableCharacter || false,
+            indicatorColor: enemy.enemyData.indicatorColor,
+            abilities: enemy.enemyData.abilities,
+            stats: enemy.enemyData.stats,
+            dialogue: enemy.enemyData.dialogue
         };
+        
+        console.log('[BattleScene] NPC data for dialogue (recruitability check):', {
+            id: npcData.id,
+            type: npcData.type,
+            isRecruitableCharacter: npcData.isRecruitableCharacter
+        });
         
         // Create dialogue overlay (using existing dialogue system)
         this.showDialogueForEnemy(npcData);
@@ -719,15 +1037,96 @@ export default class BattleScene extends Phaser.Scene {
     
     showDialogueForEnemy(npcData) {
         console.log('[BattleScene] Starting dialogue with:', npcData);
+        console.log('[BattleScene] NPC Data Details:', {
+            id: npcData.id,
+            type: npcData.type,
+            name: npcData.name,
+            isRecruitableCharacter: npcData.isRecruitableCharacter,
+            dialogue: npcData.dialogue,
+            hasDialogue: !!npcData.dialogue
+        });
         
         // Store dialogue state
         this.dialogueNpcData = npcData;
         this.isDialogueActive = true;
         
-        // Get dialogue from database
-        const dialogueData = dialogueDatabase.getDialogue(npcData.type, 'initial');
+        // Check if this is a recruitable NPC
+        const isRecruitableNPC = npcData.isRecruitableCharacter || false;
         
-        console.log('[BattleScene] Dialogue data:', dialogueData);
+        console.log('[BattleScene] Is recruitable?', isRecruitableNPC);
+        
+        // Get dialogue from database OR use recruitable dialogue
+        let dialogueData;
+        if (isRecruitableNPC) {
+            // Ensure name is defined
+            const characterName = npcData.name || npcData.type || 'Adventurer';
+            const characterType = npcData.type || 'WARRIOR';
+            
+            console.log('[BattleScene] Building recruitment dialogue for:', characterName, 'Type:', characterType);
+            
+            // Use custom recruitment dialogue based on character type
+            const recruitmentDialogues = {
+                'WARRIOR': {
+                    greeting: `Greetings, traveler. I am ${characterName}, a warrior seeking worthy allies.`,
+                    offer: `I've been wandering these lands alone for too long. If you seek a strong sword arm for your party, I would be honored to join your cause. Together, we could face any challenge that comes our way.`
+                },
+                'MAGE': {
+                    greeting: `Ah, hello there. I am ${characterName}, a mage versed in the arcane arts.`,
+                    offer: `I sense great potential in you. My magical knowledge could prove invaluable on your journey. Would you allow me to accompany you? With my spells and your leadership, we could achieve great things.`
+                },
+                'RANGER': {
+                    greeting: `Well met. The name's ${characterName}, ranger and scout.`,
+                    offer: `I've been tracking threats in this region, but I work better with a team. Your party looks capable. If you'll have me, I can provide reconnaissance and ranged support. What do you say?`
+                }
+            };
+            
+            const dialogue = recruitmentDialogues[characterType] || {
+                greeting: `Hello, I'm ${characterName}.`,
+                offer: `I'm a wandering adventurer looking for a party to join. Would you like me to accompany you on your journey?`
+            };
+            
+            console.log('[BattleScene] Generated dialogue:', dialogue);
+            
+            // DialogueCard expects 'paragraphs' as array of strings
+            dialogueData = {
+                paragraphs: [
+                    dialogue.greeting,
+                    dialogue.offer
+                ],
+                hasChoices: true,
+                choices: [
+                    {
+                        id: 'recruit',
+                        text: `✓ Accept ${characterName}`,
+                        description: `${characterName} joins your party`,
+                        available: true
+                    },
+                    {
+                        id: 'fight',
+                        text: '⚔ Test Their Skills',
+                        description: 'Engage in friendly combat',
+                        available: true
+                    },
+                    {
+                        id: 'flee',
+                        text: '✗ Decline',
+                        description: 'Politely decline and leave',
+                        available: true
+                    }
+                ]
+            };
+        } else {
+            // Regular NPC dialogue
+            dialogueData = dialogueDatabase.getDialogue(npcData.type, 'initial');
+        }
+        
+        console.log('[BattleScene] Final dialogue data:', {
+            paragraphs: dialogueData.paragraphs,
+            paragraphCount: dialogueData.paragraphs?.length,
+            hasChoices: dialogueData.hasChoices,
+            choices: dialogueData.choices,
+            choiceCount: dialogueData.choices?.length
+        });
         
         // Get player data for portrait switching
         const playerData = {
@@ -800,6 +1199,10 @@ export default class BattleScene extends Phaser.Scene {
         
         // Handle the choice
         switch (choiceId) {
+            case 'recruit':
+                this.handleRecruitment(npcData);
+                break;
+                
             case 'fight':
                 // Continue battle normally
                 console.log('[BattleScene] Player chose to fight');
@@ -817,6 +1220,235 @@ export default class BattleScene extends Phaser.Scene {
                 this.handleFleeAttempt(npcData);
                 break;
         }
+    }
+    
+    handleRecruitment(npcData) {
+        console.log('[BattleScene] Handling recruitment for:', npcData.id);
+        
+        // Get WorldScene's party manager
+        const worldScene = this.scene.get('WorldScene');
+        if (!worldScene || !worldScene.partyManager) {
+            console.error('[BattleScene] Cannot access PartyManager');
+            this.showRecruitmentMessage('Error: Cannot recruit at this time', '#ff0000');
+            return;
+        }
+        
+        // Attempt recruitment
+        const result = worldScene.partyManager.recruitFromBattle(npcData.id);
+        
+        if (result.success) {
+            console.log('[BattleScene] Recruitment successful!');
+            
+            // IMMEDIATELY remove the recruited NPC from the battle
+            const recruitedEnemy = this.enemies.find(e => e.enemyData.id === npcData.id);
+            if (recruitedEnemy) {
+                console.log('[BattleScene] Removing recruited NPC from battle:', npcData.id);
+                
+                // Remove range indicator
+                const enemyIndex = this.enemies.indexOf(recruitedEnemy);
+                if (enemyIndex !== -1 && this.rangeIndicators[enemyIndex]) {
+                    this.rangeIndicators[enemyIndex].destroy();
+                    this.rangeIndicators.splice(enemyIndex, 1);
+                }
+                
+                // Remove from NPC movement data
+                if (this.npcMovementData.has(recruitedEnemy)) {
+                    this.npcMovementData.delete(recruitedEnemy);
+                }
+                
+                // Fade out animation
+                this.tweens.add({
+                    targets: recruitedEnemy,
+                    alpha: 0,
+                    scale: 0.5,
+                    duration: 500,
+                    ease: 'Power2.In',
+                    onComplete: () => {
+                        recruitedEnemy.destroy();
+                    }
+                });
+                
+                // Remove from enemies array
+                this.enemies = this.enemies.filter(e => e !== recruitedEnemy);
+                console.log('[BattleScene] Remaining enemies:', this.enemies.length);
+            }
+            
+            // Show special recruitment victory sequence (not regular victory)
+            this.time.delayedCall(500, () => {
+                this.showRecruitmentVictorySequence(npcData);
+            });
+        } else {
+            console.log('[BattleScene] Recruitment failed:', result.message);
+            
+            // Show error message
+            this.showRecruitmentMessage(result.message, '#ff0000');
+        }
+    }
+    
+    showRecruitmentMessage(message, color) {
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        const messageText = this.add.text(
+            centerX,
+            centerY - 100,
+            message,
+            {
+                fontSize: '32px',
+                fontFamily: 'Arial',
+                color: color,
+                stroke: '#000000',
+                strokeThickness: 4,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        messageText.setDepth(2000);
+        
+        this.tweens.add({
+            targets: messageText,
+            alpha: 0,
+            y: centerY - 150,
+            duration: 2000,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                messageText.destroy();
+            }
+        });
+    }
+    
+    showRecruitmentVictorySequence(npcData) {
+        console.log('[BattleScene] Starting recruitment victory sequence for:', npcData.name);
+        
+        // Disable input during victory sequence
+        this.input.enabled = false;
+        this.isVictorySequence = true;
+        
+        // Center camera on screen center
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        // Create dramatic glowing light blue "JOINED PARTY!" text
+        const victoryText = this.add.text(
+            centerX,
+            centerY - 50,
+            'JOINED PARTY!',
+            {
+                fontSize: '96px',
+                fontFamily: 'Arial Black, Arial',
+                fontStyle: 'bold',
+                color: '#00D9FF', // Light blue color
+                stroke: '#0066CC', // Darker blue stroke
+                strokeThickness: 8,
+                shadow: {
+                    offsetX: 0,
+                    offsetY: 0,
+                    color: '#00D9FF',
+                    blur: 20,
+                    fill: true
+                }
+            }
+        ).setOrigin(0.5).setAlpha(0).setScale(0.5);
+        this.textDisplays.push(victoryText);
+        
+        // Create character name text (instead of XP)
+        const characterName = npcData.name || npcData.type;
+        const nameText = this.add.text(
+            centerX,
+            centerY + 50,
+            `${characterName} joined your party!`,
+            {
+                fontSize: '36px',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                color: '#00FF88', // Light green color
+                stroke: '#00AA55',
+                strokeThickness: 4
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        this.textDisplays.push(nameText);
+        
+        // Dramatic entrance animation with glowing effect
+        this.tweens.add({
+            targets: victoryText,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: 'Elastic.Out',
+            yoyo: false
+        });
+        
+        // Pulsing glow effect
+        this.tweens.add({
+            targets: victoryText,
+            scaleX: 1.25,
+            scaleY: 1.25,
+            duration: 1000,
+            ease: 'Sine.InOut',
+            yoyo: true,
+            repeat: 1
+        });
+        
+        // Fade in character name
+        this.tweens.add({
+            targets: nameText,
+            alpha: 1,
+            duration: 500,
+            delay: 800
+        });
+        
+        // Fade out and exit animation
+        this.time.delayedCall(3000, () => {
+            this.tweens.add({
+                targets: [victoryText, nameText],
+                y: '-=50',
+                alpha: 0,
+                scale: 0.8,
+                duration: 1000,
+                ease: 'Power2.In',
+                onComplete: () => {
+                    victoryText.destroy();
+                    nameText.destroy();
+                    
+                    // Create black rectangle for fade out
+                    const fadeRect = this.add.rectangle(
+                        0, 0,
+                        this.cameras.main.width,
+                        this.cameras.main.height,
+                        0x000000
+                    ).setOrigin(0).setDepth(1000);
+                    
+                    // Fade to black
+                    this.tweens.add({
+                        targets: fadeRect,
+                        alpha: 1,
+                        duration: 1000,
+                        onComplete: () => {
+                            this.handleRecruitmentVictory(npcData);
+                        }
+                    });
+                }
+            });
+        });
+    }
+    
+    handleRecruitmentVictory(npcData) {
+        console.log('[BattleScene] Ending battle after recruitment');
+        
+        // Mark as recruited (won't trigger battles anymore)
+        const transitionData = {
+            battleVictory: true,
+            returnPosition: this.worldPosition,
+            defeatedNpcIds: [], // Don't mark as defeated, just recruited
+            recruitedNpcId: npcData.id,
+            transitionType: 'recruitment'
+        };
+        
+        console.log('[BattleScene] Recruitment transition data:', transitionData);
+        
+        // Clean up and return to WorldScene
+        this.cleanup();
+        this.scene.resume('WorldScene', transitionData);
+        this.scene.stop();
     }
     
     handleMoneyNegotiation(cost, npcData) {
@@ -1140,6 +1772,8 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     update() {
+        const delta = this.game.loop.delta;
+        
         // Handle dialogue navigation first (if dialogue is active)
         if (this.isDialogueActive) {
             // Dialogue is handled by DialogueCard, just return without processing other input
@@ -1159,6 +1793,9 @@ export default class BattleScene extends Phaser.Scene {
         
         if (!this.player || this.enemies.length === 0) return;
 
+        // Update AP system
+        this.updateAP(delta);
+
         // Check for escape key
         if (Phaser.Input.Keyboard.JustDown(this.escapeKey)) {
             console.log('[BattleScene] ESC key pressed, returning to world');
@@ -1166,68 +1803,1412 @@ export default class BattleScene extends Phaser.Scene {
             return;
         }
 
-        // Check for attack key press
-        if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-            console.log('[Update] Attack key pressed');
-            this.attack();
+        // Handle character switching with number keys (NEW SYSTEM)
+        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key0)) {
+            console.log('[BattleScene] 0 pressed - activating group movement mode');
+            this.activateGroupMovement();
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key1)) {
+            console.log('[BattleScene] 1 pressed - controlling Player');
+            this.switchToCharacter(0); // Player
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key2) && this.partyCharacters.length >= 1) {
+            console.log('[BattleScene] 2 pressed - controlling party member 1');
+            this.switchToCharacter(1); // First party member
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key3) && this.partyCharacters.length >= 2) {
+            console.log('[BattleScene] 3 pressed - controlling party member 2');
+            this.switchToCharacter(2); // Second party member
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key4) && this.partyCharacters.length >= 3) {
+            console.log('[BattleScene] 4 pressed - controlling party member 3');
+            this.switchToCharacter(3); // Third party member
+        }
+        
+        // OLD: Handle character switching with Q/E (can be removed if not needed)
+        if (Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.switchLeft)) {
+            console.log('[BattleScene] Q pressed - switching character left');
+            this.switchCharacter('left');
+        }
+        
+        if (Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.switchRight)) {
+            console.log('[BattleScene] E pressed - switching character right');
+            this.switchCharacter('right');
         }
 
-        // Handle charging
-        if (this.isKeyPressed && !this.isCharging && this.canShootProjectile) {
-            const pressDuration = this.time.now - this.chargeStartTime;
-            if (pressDuration >= this.chargeThreshold) {
-                this.startCharging();
+        // Handle AP charging
+        const isChargingKeyPressed = (this.chargeAPKey && this.chargeAPKey.isDown) || 
+                                   (this.chargeAPKeyAlt && this.chargeAPKeyAlt.isDown);
+        
+        if (isChargingKeyPressed) {
+            if (!this.isChargingAP) {
+                console.log('[BattleScene] = held - starting AP charge');
+                this.isChargingAP = true;
+                this.showChargingFeedback();
+            }
+        } else {
+            if (this.isChargingAP) {
+                console.log('[BattleScene] = released - stopping AP charge');
+                this.isChargingAP = false;
             }
         }
-
-        // Update charge bar if charging
-        if (this.isCharging) {
-            this.updateChargeBar();
+        
+        // Debug: Check if key is working (reduced frequency)
+        if (isChargingKeyPressed && Math.random() < 0.01) { // Only log 1% of the time
+            console.log('[BattleScene] = key is being held down');
         }
 
-        // Check for secondary attack key press
-        if (Phaser.Input.Keyboard.JustDown(this.secondaryAttackKey)) {
-            console.log('[Update] Secondary attack key pressed');
-            this.secondaryAttack();
+        // Handle face button abilities (only during player turn and with AP)
+        if (this.isPlayerTurn && this.currentAP > 0) {
+            this.handleFaceButtonInput();
         }
 
-        // Handle dash
-        if (Phaser.Input.Keyboard.JustDown(this.dashKey) && this.canDash && !this.isDashing) {
+        // Handle dash (only if has AP)
+        if (Phaser.Input.Keyboard.JustDown(this.dashKey) && this.canDash && !this.isDashing && this.currentAP > 0) {
             console.log('[Update] Dash initiated');
             this.dash();
         }
 
-        // Player movement with WASD (only if not dashing)
-        if (!this.isDashing) {
-            if (this.wasdKeys.left.isDown) {
-                console.log('[BattleScene] Left key pressed');
-                this.player.body.setVelocityX(-300);
-            } else if (this.wasdKeys.right.isDown) {
-                console.log('[BattleScene] Right key pressed');
-                this.player.body.setVelocityX(300);
+        // Player/Party movement with WASD (only if not dashing, during player turn, and has AP)
+        if (!this.isDashing && this.isPlayerTurn && this.currentAP > 0) {
+            if (this.groupMovementMode) {
+                // GROUP MOVEMENT MODE (key 0): All characters move together
+                if (this.wasdKeys.left.isDown) {
+                    console.log('[BattleScene] Group movement - Left');
+                    this.player.body.setVelocityX(-300);
+                    this.partyCharacters.forEach(char => {
+                        if (char.body) char.body.setVelocityX(-300);
+                    });
+                    this.isMoving = true;
+                } else if (this.wasdKeys.right.isDown) {
+                    console.log('[BattleScene] Group movement - Right');
+                    this.player.body.setVelocityX(300);
+                    this.partyCharacters.forEach(char => {
+                        if (char.body) char.body.setVelocityX(300);
+                    });
+                    this.isMoving = true;
+                } else {
+                    this.player.body.setVelocityX(0);
+                    this.partyCharacters.forEach(char => {
+                        if (char.body) char.body.setVelocityX(0);
+                    });
+                    this.isMoving = false;
+                }
             } else {
-                this.player.body.setVelocityX(0);
+                // INDIVIDUAL CHARACTER CONTROL MODE (keys 1-4): Only selected character moves
+                const activeChar = this.getActiveCharacterObject();
+                if (activeChar && activeChar.body) {
+                    if (this.wasdKeys.left.isDown) {
+                        console.log('[BattleScene] Individual movement - Left (char', this.activeCharacterIndex, ')');
+                        activeChar.body.setVelocityX(-300);
+                        this.isMoving = true;
+                    } else if (this.wasdKeys.right.isDown) {
+                        console.log('[BattleScene] Individual movement - Right (char', this.activeCharacterIndex, ')');
+                        activeChar.body.setVelocityX(300);
+                        this.isMoving = true;
+                    } else {
+                        activeChar.body.setVelocityX(0);
+                        this.isMoving = false;
+                    }
+                }
+                
+                // Stop all other characters
+                if (this.activeCharacterIndex !== 0 && this.player.body) {
+                    this.player.body.setVelocityX(0);
+                }
+                this.partyCharacters.forEach((char, index) => {
+                    if (char.body && (index + 1) !== this.activeCharacterIndex) {
+                        char.body.setVelocityX(0);
+                    }
+                });
+            }
+        } else if (!this.isDashing) {
+            // Only stop movement if NOT dashing (dash controls its own velocity)
+            this.player.body.setVelocityX(0);
+            this.partyCharacters.forEach(char => {
+                if (char.body) char.body.setVelocityX(0);
+            });
+            this.isMoving = false;
+            
+            // Show feedback when trying to move without AP
+            if (this.isPlayerTurn && this.currentAP <= 0 && (this.wasdKeys.left.isDown || this.wasdKeys.right.isDown)) {
+                this.showNoAPFeedback();
             }
         }
+        // If dashing, velocity is controlled by dash function
 
         // Player jump with W
-        if (this.wasdKeys.up.isDown && this.player.body.touching.down) {
+        if (this.wasdKeys.up.isDown && this.player.body.touching.down && this.isPlayerTurn) {
             console.log('[BattleScene] Up key pressed - jumping');
             this.player.body.setVelocityY(-450);
         }
 
         // Update enemy health and level displays
         this.updateEnemyDisplays();
+        
+        // Update range indicators
+        this.updateRangeIndicators();
+        
+        // Update NPC AI - ALL NPCs only move during player AP consumption or charging
+        this.updateNPCMovement(delta);
+    }
+    
+    updateNPCMovement(delta) {
+        // Don't move NPCs during dialogue, enemy selection, or victory
+        if (this.isDialogueActive || this.isEnemySelectionMode || !this.isPlayerTurn || this.isVictorySequence) {
+            this.npcMovementData.forEach((movementData, npc) => {
+                if (npc && npc.active && npc.body) {
+                    npc.body.setVelocityX(0);
+                    movementData.isMoving = false;
+                }
+            });
+            return;
+        }
+        
+        // NPCs should ONLY move and attack when player is consuming or charging AP:
+        // 1. Player is moving (consuming AP)
+        // 2. Player is dashing (consuming AP)
+        // 3. Player is charging AP (vulnerable moment)
+        const shouldNPCsMove = this.isMoving || this.isDashing || this.isDashingAP || this.isChargingAP;
+        const isPlayerCharging = this.isChargingAP; // Track if player is specifically charging
+        
+        if (!shouldNPCsMove) {
+            // FREEZE all NPCs when player is not consuming/charging AP
+            this.npcMovementData.forEach((movementData, npc) => {
+                if (npc && npc.active && npc.body) {
+                    npc.body.setVelocityX(0);
+                    movementData.isMoving = false;
+                }
+            });
+            return;
+        }
+        
+        // Update each NPC's AI and movement
+        this.npcMovementData.forEach((movementData, npc) => {
+            if (!npc || !npc.active || !npc.body || npc.enemyData.health <= 0) {
+                return;
+            }
+            
+            // Calculate distance to player
+            const distanceToPlayer = Phaser.Math.Distance.Between(
+                npc.x,
+                npc.y,
+                this.player.x,
+                this.player.y
+            );
+            
+            // Determine AI state based on HP and combat status
+            const hpPercent = npc.enemyData.health / npc.enemyData.maxHealth;
+            
+            // Update AI state based on HP (all NPCs can go defensive)
+            if (hpPercent <= 0.5 && movementData.aiState !== 'defensive') {
+                movementData.aiState = 'defensive';
+                console.log(`[NPC AI] ${npc.enemyData.type} entering DEFENSIVE mode (HP: ${Math.floor(hpPercent * 100)}%)`);
+            } else if (movementData.hasBeenAttacked && movementData.aiState === 'idle') {
+                movementData.aiState = 'combat';
+                console.log(`[NPC AI] ${npc.enemyData.type} entering COMBAT mode!`);
+            }
+            
+            // Handle different AI states
+            switch (movementData.aiState) {
+                case 'idle':
+                    this.updateNPCIdleState(npc, movementData, delta, distanceToPlayer, isPlayerCharging);
+                    break;
+                    
+                case 'combat':
+                    this.updateNPCCombatState(npc, movementData, delta, distanceToPlayer, isPlayerCharging);
+                    break;
+                    
+                case 'defensive':
+                    this.updateNPCDefensiveState(npc, movementData, delta, distanceToPlayer, isPlayerCharging);
+                    break;
+            }
+            
+            // Keep NPCs within bounds
+            const minX = 50;
+            const maxX = this.cameras.main.width - 50;
+            
+            if (npc.x <= minX || npc.x >= maxX) {
+                npc.body.setVelocityX(0);
+            }
+        });
+    }
+    
+    updateNPCIdleState(npc, movementData, delta, distanceToPlayer, isPlayerCharging) {
+        // Idle state: walk forward toward player slowly (modified by aggressiveness)
+        movementData.changeTimer += delta;
+        
+        // Slowly approach player
+        const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+        movementData.direction = directionToPlayer;
+        
+        // If player is charging AP, move faster and attack if in range
+        if (isPlayerCharging) {
+            if (distanceToPlayer <= this.npcAttackRange) {
+                // In range - stop and attack vulnerable charging player
+                npc.body.setVelocityX(0);
+                movementData.isMoving = false;
+                
+                const currentTime = this.time.now;
+                if (currentTime - movementData.lastAttackTime >= this.npcAttackCooldown) {
+                    movementData.lastAttackTime = currentTime;
+                    this.performNPCMeleeAttack(npc);
+                }
+            } else {
+                // Chase charging player (speed modified by aggressiveness)
+                const velocity = (this.npcMovementSpeed * movementData.aggressiveness) * movementData.direction;
+                npc.body.setVelocityX(velocity);
+                movementData.isMoving = true;
+            }
+        } else {
+            // Normal slow patrol (speed modified by aggressiveness)
+            const velocity = (this.npcMovementSpeed * 0.7 * movementData.aggressiveness) * movementData.direction;
+            npc.body.setVelocityX(velocity);
+            movementData.isMoving = true;
+        }
+    }
+    
+    updateNPCCombatState(npc, movementData, delta, distanceToPlayer, isPlayerCharging) {
+        // Combat state: actively pursue and attack player
+        const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+        
+        // Check if in attack range
+        if (distanceToPlayer <= this.npcAttackRange) {
+            // Stop moving and attack
+            npc.body.setVelocityX(0);
+            movementData.isMoving = false;
+            
+            // Try to attack if cooldown is ready
+            const currentTime = this.time.now;
+            if (currentTime - movementData.lastAttackTime >= this.npcAttackCooldown) {
+                movementData.lastAttackTime = currentTime;
+                this.performNPCMeleeAttack(npc);
+            }
+        } else {
+            // Chase player (speed modified by aggressiveness, faster if player charging)
+            movementData.direction = directionToPlayer;
+            const chargingMultiplier = isPlayerCharging ? 1.2 : 1.0;
+            const velocity = (this.npcMovementSpeed * movementData.aggressiveness * chargingMultiplier) * movementData.direction;
+            npc.body.setVelocityX(velocity);
+            movementData.isMoving = true;
+        }
+    }
+    
+    updateNPCDefensiveState(npc, movementData, delta, distanceToPlayer, isPlayerCharging) {
+        // Defensive state: maintain position with slight mobility
+        movementData.changeTimer += delta;
+        
+        // Don't rush forward, just slight repositioning
+        if (distanceToPlayer <= this.npcAttackRange) {
+            // In attack range - stop and attack
+            npc.body.setVelocityX(0);
+            movementData.isMoving = false;
+            
+            const currentTime = this.time.now;
+            if (currentTime - movementData.lastAttackTime >= this.npcAttackCooldown) {
+                movementData.lastAttackTime = currentTime;
+                this.performNPCMeleeAttack(npc);
+            }
+        } else if (distanceToPlayer < this.npcAttackRange * 1.5) {
+            // Close but not in range - slow approach (faster if player charging)
+            const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+            const chargingMultiplier = isPlayerCharging ? 0.6 : 0.4;
+            const velocity = (this.npcMovementSpeed * movementData.aggressiveness * chargingMultiplier) * directionToPlayer;
+            npc.body.setVelocityX(velocity);
+            movementData.isMoving = true;
+        } else {
+            // Too far - slight back and forth movement
+            if (movementData.changeTimer >= movementData.changeInterval) {
+                movementData.changeTimer = 0;
+                movementData.changeInterval = Math.random() * 1500 + 1000;
+                movementData.direction *= -1;
+            }
+            
+            const velocity = (this.npcMovementSpeed * 0.3 * movementData.aggressiveness) * movementData.direction;
+            npc.body.setVelocityX(velocity);
+            movementData.isMoving = true;
+        }
+    }
+    
+    performNPCMeleeAttack(npc) {
+        console.log(`[NPC AI] ${npc.enemyData.type} performing melee attack!`);
+        
+        // Calculate damage and knockback based on NPC's strength and type
+        const baseDamage = 15;
+        const npcStrength = npc.enemyData.level || 1;
+        const damage = baseDamage + (npcStrength * 2);
+        const knockbackForce = 200 + (npcStrength * 30); // Base knockback + strength modifier
+        
+        // Determine attack direction
+        const isNPCRightOfPlayer = npc.x > this.player.x;
+        const attackOffset = isNPCRightOfPlayer ? -this.attackOffset : this.attackOffset;
+        const directionToPlayer = isNPCRightOfPlayer ? -1 : 1;
+        
+        // Create attack hitbox
+        const attackX = npc.x + attackOffset;
+        const attackY = npc.y;
+        
+        const npcAttack = this.add.rectangle(
+            attackX,
+            attackY,
+            this.attackWidth,
+            this.attackHeight,
+            0xff0000 // Red attack
+        );
+        
+        this.physics.add.existing(npcAttack);
+        npcAttack.body.setAllowGravity(false);
+        
+        // Check for collision with player
+        this.physics.add.overlap(npcAttack, this.player, () => {
+            console.log(`[NPC AI] ${npc.enemyData.type} hit player for ${damage} damage!`);
+            
+            // Apply HP damage to player
+            this.currentHP = Math.max(0, this.currentHP - damage);
+            console.log(`[NPC AI] Player HP: ${this.currentHP}/${this.maxHP}`);
+            
+            // Update HUD to reflect HP change
+            if (this.hudManager) {
+                this.hudManager.updatePlayerStats();
+            }
+            
+            // Apply knockback to player
+            const knockbackX = directionToPlayer * knockbackForce;
+            const knockbackY = -80; // Upward knockback
+            
+            if (this.player.body) {
+                this.player.body.setVelocity(knockbackX, knockbackY);
+                
+                // Reset player velocity after knockback duration
+                this.time.delayedCall(200, () => {
+                    if (this.player && this.player.body) {
+                        this.player.body.setVelocityX(0);
+                    }
+                });
+            }
+            
+            // Show damage text on player
+            const damageText = this.add.text(this.player.x, this.player.y - 50, `-${damage} HP`, {
+                fontSize: '28px',
+                fontFamily: 'Arial',
+                color: '#ff0000',
+                stroke: '#000000',
+                strokeThickness: 4,
+                fontStyle: 'bold'
+            }).setOrigin(0.5);
+            
+            this.tweens.add({
+                targets: damageText,
+                y: this.player.y - 100,
+                alpha: 0,
+                duration: 800,
+                ease: 'Power2',
+                onComplete: () => {
+                    damageText.destroy();
+                }
+            });
+            
+            // Visual feedback on player (flash red with alpha)
+            this.tweens.add({
+                targets: this.player,
+                alpha: 0.3,
+                tint: 0xff0000,
+                duration: 100,
+                yoyo: true,
+                repeat: 2,
+                onComplete: () => {
+                    this.player.setAlpha(1);
+                    this.player.clearTint();
+                }
+            });
+            
+            // Check if player is defeated
+            if (this.currentHP <= 0) {
+                console.log('[NPC AI] Player defeated!');
+                this.handlePlayerDefeat();
+            }
+            
+            npcAttack.destroy();
+        });
+        
+        // Remove attack after duration
+        this.time.delayedCall(this.attackDuration, () => {
+            if (npcAttack && npcAttack.active) {
+                npcAttack.destroy();
+            }
+        });
+    }
+    
+    handlePlayerDefeat() {
+        console.log('[BattleScene] Player has been defeated!');
+        
+        // Stop all player actions
+        this.isPlayerTurn = false;
+        
+        // Stop player movement
+        if (this.player && this.player.body) {
+            this.player.body.setVelocity(0, 0);
+        }
+        
+        // Stop all NPC movement
+        if (this.npcMovementData) {
+            this.npcMovementData.forEach((movementData, npc) => {
+                if (npc && npc.active && npc.body) {
+                    npc.body.setVelocityX(0);
+                    movementData.isMoving = false;
+                }
+            });
+        }
+        
+        // Fade out player
+        this.tweens.add({
+            targets: this.player,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Power2'
+        });
+        
+        // Display defeat message
+        const defeatText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 100,
+            'DEFEATED',
+            {
+                fontSize: '64px',
+                fontFamily: 'Arial',
+                color: '#ff0000',
+                stroke: '#000000',
+                strokeThickness: 8,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        
+        this.tweens.add({
+            targets: defeatText,
+            alpha: 1,
+            duration: 500,
+            ease: 'Power2'
+        });
+        
+        // Return to world scene after delay
+        this.time.delayedCall(3000, () => {
+            console.log('[BattleScene] Returning to WorldScene after defeat');
+            this.cleanup();
+            this.scene.start('WorldScene');
+        });
+    }
+    
+    updateRangeIndicators() {
+        if (!this.player || !this.enemies || this.rangeIndicators.length === 0) return;
+        
+        // Update each indicator
+        this.enemies.forEach((enemy, index) => {
+            if (!enemy || !enemy.active) return;
+            
+            const indicator = this.rangeIndicators[index];
+            if (!indicator) return;
+            
+            // Position indicator at enemy location
+            indicator.setPosition(enemy.x, enemy.y);
+            
+            // Calculate distance to player
+            const distance = Phaser.Math.Distance.Between(
+                this.player.x,
+                this.player.y,
+                enemy.x,
+                enemy.y
+            );
+            
+            // Show/fade indicator based on distance
+            // Attack is possible when yellow circle appears (distance <= maxMeleeDistance)
+            if (distance <= this.rangeIndicatorRadius) {
+                // Optimal range - show bright pulsing green (inside the circle)
+                const pulseAlpha = 0.5 + Math.sin(this.time.now / 150) * 0.3;
+                const pulseWidth = 5 + Math.sin(this.time.now / 150) * 1.5;
+                indicator.setStrokeStyle(pulseWidth, 0x00ff00, pulseAlpha);
+            } else if (distance <= this.maxMeleeDistance) {
+                // Attack range active - show pulsing yellow/gold (extended range)
+                const pulseAlpha = 0.35 + Math.sin(this.time.now / 200) * 0.2;
+                const pulseWidth = 4 + Math.sin(this.time.now / 200) * 1;
+                indicator.setStrokeStyle(pulseWidth, 0xffff00, pulseAlpha);
+            } else if (distance <= this.maxMeleeDistance * 1.2) {
+                // Getting close - faint orange warning
+                indicator.setStrokeStyle(2, 0xffaa00, 0.2);
+            } else {
+                // Too far - hide completely
+                indicator.setStrokeStyle(0, 0x00ff00, 0);
+            }
+        });
+    }
+    
+    handleFaceButtonInput() {
+        // Handle U key (Player melee combo attack)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.u)) {
+            console.log('[BattleScene] U pressed - Player melee combo attack');
+            this.performMeleeComboAttack();
+        }
+        
+        // Handle I key (Party Member 1 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.i)) {
+            if (this.partyCharacters[0]) {
+                console.log('[BattleScene] I pressed - Party Member 1 ability');
+                this.executePartyMemberAbility(0);
+            } else {
+                console.log('[BattleScene] I pressed - No party member in slot 1');
+            }
+        }
+        
+        // Handle O key (Party Member 2 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.o)) {
+            if (this.partyCharacters[1]) {
+                console.log('[BattleScene] O pressed - Party Member 2 ability');
+                this.executePartyMemberAbility(1);
+            } else {
+                console.log('[BattleScene] O pressed - No party member in slot 2');
+            }
+        }
+        
+        // Handle P key (Party Member 3 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.p)) {
+            if (this.partyCharacters[2]) {
+                console.log('[BattleScene] P pressed - Party Member 3 ability');
+                this.executePartyMemberAbility(2);
+            } else {
+                console.log('[BattleScene] P pressed - No party member in slot 3');
+            }
+        }
+    }
+    
+    showNoAPFeedback() {
+        // Show feedback when trying to use abilities without AP
+        if (this.currentAP <= 0) {
+            console.log('[BattleScene] No AP available for action');
+            this.showNoAPMessage();
+        }
+    }
+    
+    showNoAPMessage() {
+        // Create temporary text showing no AP
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        const noAPText = this.add.text(
+            centerX,
+            centerY - 100,
+            'NO AP!',
+            {
+                fontSize: '32px',
+                fontFamily: 'Arial',
+                color: '#FF4444',
+                stroke: '#000000',
+                strokeThickness: 3
+            }
+        );
+        noAPText.setOrigin(0.5);
+        noAPText.setDepth(1000);
+        
+        // Animate in and out
+        this.tweens.add({
+            targets: noAPText,
+            alpha: 0,
+            y: centerY - 150,
+            duration: 1000,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                noAPText.destroy();
+            }
+        });
+    }
+    
+    showChargingFeedback() {
+        // Create temporary text showing charging
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        const chargingText = this.add.text(
+            centerX,
+            centerY - 100,
+            'CHARGING AP...',
+            {
+                fontSize: '24px',
+                fontFamily: 'Arial',
+                color: '#00FF00',
+                stroke: '#000000',
+                strokeThickness: 3
+            }
+        );
+        chargingText.setOrigin(0.5);
+        chargingText.setDepth(1000);
+        
+        // Animate in and out
+        this.tweens.add({
+            targets: chargingText,
+            alpha: 0,
+            y: centerY - 150,
+            duration: 2000,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                chargingText.destroy();
+            }
+        });
+    }
+    
+    performMeleeComboAttack() {
+        // Check if can perform combo attack
+        if (!this.canCombo) {
+            console.log('[BattleScene] Combo on cooldown');
+            return;
+        }
+        
+        // Check if enough AP for attack
+        if (this.currentAP < this.meleeAPCost) {
+            console.log('[BattleScene] Not enough AP for melee attack');
+            this.showNoAPMessage();
+            return;
+        }
+        
+        // Find closest enemy
+        const closestEnemy = this.findClosestEnemy();
+        if (!closestEnemy) {
+            console.log('[BattleScene] No enemies to attack');
+            return;
+        }
+        
+        // Check distance to closest enemy
+        const distance = Phaser.Math.Distance.Between(
+            this.player.x,
+            this.player.y,
+            closestEnemy.x,
+            closestEnemy.y
+        );
+        
+        if (distance > this.maxMeleeDistance) {
+            const rangeDeficit = Math.floor(distance - this.maxMeleeDistance);
+            console.log(`[BattleScene] Enemy too far for melee attack (distance: ${Math.floor(distance)}, max: ${this.maxMeleeDistance}, need ${rangeDeficit} closer)`);
+            this.showOutOfRangeMessage();
+            return;
+        }
+        
+        // Log attack range status
+        if (distance <= this.rangeIndicatorRadius) {
+            console.log(`[BattleScene] ⚔️ OPTIMAL RANGE (Green)! Distance: ${Math.floor(distance)}/${this.rangeIndicatorRadius}`);
+        } else if (distance <= this.maxMeleeDistance) {
+            console.log(`[BattleScene] ⚔️ EXTENDED RANGE (Yellow)! Distance: ${Math.floor(distance)}/${this.maxMeleeDistance}`);
+        }
+        
+        // Check if within combo window
+        const currentTime = this.time.now;
+        const timeSinceLastHit = currentTime - this.lastComboTime;
+        
+        if (timeSinceLastHit > this.comboWindow) {
+            // Reset combo count if outside window
+            this.comboCount = 0;
+        }
+        
+        // Increment combo counter
+        this.comboCount++;
+        this.lastComboTime = currentTime;
+        
+        console.log(`[BattleScene] Combo Hit ${this.comboCount}! Distance: ${Math.floor(distance)}, AP cost: ${this.meleeAPCost}`);
+        
+        // Consume AP for attack
+        this.consumeAP(this.meleeAPCost);
+        
+        // Perform the attack with combo multiplier
+        this.executeMeleeCombo(closestEnemy, this.comboCount);
+        
+        // Set cooldown before next attack
+        this.canCombo = false;
+        this.time.delayedCall(this.comboCooldown, () => {
+            this.canCombo = true;
+        });
+    }
+    
+    executeMeleeCombo(enemy, comboHit) {
+        // Calculate damage with combo multiplier (each hit in combo does slightly more)
+        const baseDamage = 15;
+        const comboMultiplier = 1 + (comboHit - 1) * 0.1; // +10% per combo hit
+        const damage = Math.floor(baseDamage * comboMultiplier);
+        
+        console.log(`[BattleScene] Executing combo hit ${comboHit} for ${damage} damage (${comboMultiplier.toFixed(1)}x)`);
+        
+        // Determine attack direction
+        const isPlayerRightOfEnemy = this.player.x > enemy.x;
+        const attackOffset = isPlayerRightOfEnemy ? -this.attackOffset : this.attackOffset;
+        
+        // Create attack hitbox with combo visual
+        const attackX = this.player.x + attackOffset;
+        const attackY = this.player.y;
+        
+        // Different colors for different combo levels
+        const comboColors = [0xFFFFFF, 0xFFFF00, 0xFF9900, 0xFF0000, 0xFF00FF];
+        const attackColor = comboColors[Math.min(comboHit - 1, comboColors.length - 1)];
+        
+        const attackSprite = this.add.rectangle(
+            attackX,
+            attackY,
+            this.attackWidth * (1 + comboHit * 0.1), // Slightly larger with each combo
+            this.attackHeight,
+            attackColor
+        );
+        
+        this.physics.add.existing(attackSprite);
+        attackSprite.body.setAllowGravity(false);
+        
+        // Apply knockback
+        const knockbackForce = 300 + (comboHit * 50); // More knockback with combo
+        const knockbackX = isPlayerRightOfEnemy ? -knockbackForce : knockbackForce;
+        
+        enemy.body.setVelocityX(knockbackX);
+        if (enemy.body.touching.down) {
+            enemy.body.setVelocityY(-150 - (comboHit * 20));
+        }
+        
+        // Apply damage
+        enemy.enemyData.health = Math.max(0, enemy.enemyData.health - damage);
+        
+        // Alert NPC AI that it has been attacked (triggers combat mode)
+        if (this.npcMovementData.has(enemy)) {
+            const npcData = this.npcMovementData.get(enemy);
+            if (!npcData.hasBeenAttacked) {
+                npcData.hasBeenAttacked = true;
+                console.log(`[NPC AI] ${enemy.enemyData.type} has been attacked by player - entering combat mode!`);
+            }
+        }
+        
+        // Visual feedback with combo-specific color
+        const originalColor = enemy.enemyData.color;
+        enemy.setFillStyle(attackColor);
+        this.time.delayedCall(100, () => {
+            if (enemy && enemy.active) {
+                enemy.setFillStyle(originalColor);
+            }
+        });
+        
+        // Show combo counter text
+        this.showComboText(comboHit, damage);
+        
+        // Check for defeat
+        if (enemy.enemyData.health <= 0) {
+            console.log(`[BattleScene] Enemy defeated with ${comboHit}-hit combo!`);
+            this.handleEnemyDefeat(enemy);
+        }
+        
+        // Remove attack sprite
+        this.time.delayedCall(this.attackDuration, () => {
+            if (attackSprite && attackSprite.active) {
+                attackSprite.destroy();
+            }
+        });
+    }
+    
+    showComboText(comboHit, damage) {
+        const centerX = this.player.x;
+        const centerY = this.player.y - 100;
+        
+        let comboText = '';
+        let textColor = '#FFFFFF';
+        
+        if (comboHit === 1) {
+            comboText = `HIT! ${damage}`;
+            textColor = '#FFFFFF';
+        } else if (comboHit === 2) {
+            comboText = `${comboHit} COMBO! ${damage}`;
+            textColor = '#FFFF00';
+        } else if (comboHit === 3) {
+            comboText = `${comboHit} COMBO!! ${damage}`;
+            textColor = '#FF9900';
+        } else if (comboHit >= 4) {
+            comboText = `${comboHit} COMBO!!! ${damage}`;
+            textColor = '#FF00FF';
+        }
+        
+        const comboDisplay = this.add.text(
+            centerX,
+            centerY,
+            comboText,
+            {
+                fontSize: `${24 + (comboHit * 4)}px`,
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                color: textColor,
+                stroke: '#000000',
+                strokeThickness: 3
+            }
+        );
+        comboDisplay.setOrigin(0.5);
+        comboDisplay.setDepth(1000);
+        
+        // Animate
+        this.tweens.add({
+            targets: comboDisplay,
+            y: centerY - 50,
+            alpha: 0,
+            scale: 1.5,
+            duration: 600,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                comboDisplay.destroy();
+            }
+        });
+    }
+    
+    showOutOfRangeMessage() {
+        const centerX = this.player.x;
+        const centerY = this.player.y - 80;
+        
+        const rangeText = this.add.text(
+            centerX,
+            centerY,
+            'OUT OF RANGE!',
+            {
+                fontSize: '24px',
+                fontFamily: 'Arial',
+                color: '#FF4444',
+                stroke: '#000000',
+                strokeThickness: 3
+            }
+        );
+        rangeText.setOrigin(0.5);
+        rangeText.setDepth(1000);
+        
+        this.tweens.add({
+            targets: rangeText,
+            alpha: 0,
+            y: centerY - 40,
+            duration: 800,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                rangeText.destroy();
+            }
+        });
+    }
+    
+    executePartyMemberAbility(memberIndex) {
+        const character = this.partyCharacters[memberIndex];
+        if (!character || !character.active) {
+            console.log(`[BattleScene] Party member ${memberIndex} not available`);
+            return;
+        }
+        
+        const memberData = character.memberData;
+        const abilityAPCost = 5; // AP cost for party member abilities
+        
+        // Check if enough AP
+        if (this.currentAP < abilityAPCost) {
+            console.log(`[BattleScene] Not enough AP for ${memberData.name}'s ability`);
+            this.showNoAPMessage();
+            return;
+        }
+        
+        // Find closest enemy
+        const closestEnemy = this.findClosestEnemy();
+        if (!closestEnemy) {
+            console.log('[BattleScene] No enemies to target');
+            return;
+        }
+        
+        // Consume AP
+        this.consumeAP(abilityAPCost);
+        
+        console.log(`[BattleScene] ${memberData.name} using ability!`);
+        
+        // Perform ability based on character
+        const damage = memberData.stats.attack || 15;
+        
+        // Create projectile from party member to enemy
+        const projectile = this.add.rectangle(
+            character.x,
+            character.y,
+            20,
+            20,
+            memberData.indicatorColor
+        );
+        
+        this.physics.add.existing(projectile);
+        projectile.body.setAllowGravity(false);
+        
+        // Calculate direction to enemy
+        const angle = Phaser.Math.Angle.Between(
+            character.x, character.y,
+            closestEnemy.x, closestEnemy.y
+        );
+        
+        // Move projectile toward enemy
+        const projectileSpeed = 500;
+        projectile.body.setVelocity(
+            Math.cos(angle) * projectileSpeed,
+            Math.sin(angle) * projectileSpeed
+        );
+        
+        // Add collision with enemies
+        const overlapCollider = this.physics.add.overlap(projectile, closestEnemy, () => {
+            console.log(`[BattleScene] ${memberData.name}'s attack hit!`);
+            
+            // Apply damage
+            this.applyDamageToEnemy(closestEnemy, damage);
+            
+            // Show damage text
+            const damageText = this.add.text(
+                closestEnemy.x,
+                closestEnemy.y - 60,
+                `-${damage}`,
+                {
+                    fontSize: '24px',
+                    fontFamily: 'Arial',
+                    color: '#' + memberData.indicatorColor.toString(16).padStart(6, '0'),
+                    stroke: '#000000',
+                    strokeThickness: 3,
+                    fontStyle: 'bold'
+                }
+            ).setOrigin(0.5);
+            
+            this.tweens.add({
+                targets: damageText,
+                y: closestEnemy.y - 100,
+                alpha: 0,
+                duration: 800,
+                ease: 'Power2',
+                onComplete: () => {
+                    damageText.destroy();
+                }
+            });
+            
+            // Destroy projectile
+            projectile.destroy();
+            overlapCollider.destroy();
+        });
+        
+        // Remove projectile after 2 seconds if it doesn't hit
+        this.time.delayedCall(2000, () => {
+            if (projectile && projectile.active) {
+                projectile.destroy();
+                if (overlapCollider) overlapCollider.destroy();
+            }
+        });
+        
+        // Show ability name
+        const abilityText = this.add.text(
+            character.x,
+            character.y - 80,
+            memberData.name,
+            {
+                fontSize: '18px',
+                fontFamily: 'Arial',
+                color: '#' + memberData.indicatorColor.toString(16).padStart(6, '0'),
+                stroke: '#000000',
+                strokeThickness: 2,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5);
+        
+        this.tweens.add({
+            targets: abilityText,
+            alpha: 0,
+            y: character.y - 120,
+            duration: 1000,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                abilityText.destroy();
+            }
+        });
+    }
+    
+    executeCharacterAbility(characterIndex, abilityType) {
+        // Check if character exists
+        if (characterIndex >= this.partyMembers.length) {
+            console.log(`[BattleScene] Character ${characterIndex} not available`);
+            return;
+        }
+        
+        const character = this.partyMembers[characterIndex];
+        const ability = this.characterAbilities[abilityType];
+        
+        if (!ability) {
+            console.log(`[BattleScene] Ability ${abilityType} not found`);
+            return;
+        }
+        
+        // Check if enough AP
+        if (!this.consumeAP(ability.apCost)) {
+            console.log(`[BattleScene] Not enough AP for ${abilityType}`);
+            this.showNoAPMessage();
+            return;
+        }
+        
+        console.log(`[BattleScene] Executing ${abilityType} with ${character.name}`);
+        
+        // Execute the ability
+        this.performCharacterAbility(character, abilityType, ability);
+        
+        // Trigger enemy turn after player action
+        this.triggerEnemyTurn();
+    }
+    
+    performCharacterAbility(character, abilityType, ability) {
+        // Find closest enemy for targeting
+        const closestEnemy = this.findClosestEnemy();
+        if (!closestEnemy) {
+            console.log('[BattleScene] No enemies to target');
+            return;
+        }
+        
+        // Create attack based on ability type
+        switch (abilityType) {
+            case 'basicAttack':
+                this.performBasicAttack(character, closestEnemy, ability);
+                break;
+            case 'specialAttack':
+                this.performSpecialAttack(character, closestEnemy, ability);
+                break;
+            case 'spell':
+                this.performSpell(character, closestEnemy, ability);
+                break;
+            case 'item':
+                this.performItemUse(character, ability);
+                break;
+        }
+    }
+    
+    performBasicAttack(character, target, ability) {
+        console.log(`[BattleScene] ${character.name} performs basic attack on ${target.enemyData.type}`);
+        
+        // Create attack hitbox
+        const attackX = this.player.x;
+        const attackY = this.player.y;
+        
+        const attackSprite = this.add.rectangle(
+            attackX,
+            attackY,
+            this.attackWidth,
+            this.attackHeight,
+            0xFFFFFF
+        );
+        
+        this.physics.add.existing(attackSprite);
+        attackSprite.body.setAllowGravity(false);
+        
+        // Apply damage to target
+        this.applyDamageToEnemy(target, ability.damage);
+        
+        // Remove attack after duration
+        this.time.delayedCall(this.attackDuration, () => {
+            attackSprite.destroy();
+        });
+    }
+    
+    performSpecialAttack(character, target, ability) {
+        console.log(`[BattleScene] ${character.name} performs special attack on ${target.enemyData.type}`);
+        
+        // Create projectile
+        const projectile = this.add.rectangle(
+            this.player.x,
+            this.player.y,
+            this.projectileSize,
+            this.projectileSize,
+            0xff0000
+        );
+        
+        this.physics.add.existing(projectile);
+        projectile.body.setAllowGravity(false);
+        
+        // Move projectile toward target
+        const direction = target.x > this.player.x ? 1 : -1;
+        projectile.body.setVelocityX(this.projectileSpeed * direction);
+        
+        // Apply damage on hit
+        this.physics.add.overlap(projectile, target, () => {
+            this.applyDamageToEnemy(target, ability.damage);
+            projectile.destroy();
+        });
+        
+        // Remove projectile after duration
+        this.time.delayedCall(this.secondaryAttackDuration, () => {
+            if (projectile && projectile.active) {
+                projectile.destroy();
+            }
+        });
+    }
+    
+    performSpell(character, target, ability) {
+        console.log(`[BattleScene] ${character.name} casts spell on ${target.enemyData.type}`);
+        
+        // Create magical projectile
+        const spell = this.add.rectangle(
+            this.player.x,
+            this.player.y,
+            this.projectileSize * 1.5,
+            this.projectileSize * 1.5,
+            0x00ff00
+        );
+        
+        this.physics.add.existing(spell);
+        spell.body.setAllowGravity(false);
+        
+        // Move spell toward target
+        const direction = target.x > this.player.x ? 1 : -1;
+        spell.body.setVelocityX(this.projectileSpeed * direction);
+        
+        // Apply damage on hit
+        this.physics.add.overlap(spell, target, () => {
+            this.applyDamageToEnemy(target, ability.damage);
+            spell.destroy();
+        });
+        
+        // Remove spell after duration
+        this.time.delayedCall(this.secondaryAttackDuration, () => {
+            if (spell && spell.active) {
+                spell.destroy();
+            }
+        });
+    }
+    
+    performItemUse(character, ability) {
+        console.log(`[BattleScene] ${character.name} uses item`);
+        // Item usage logic would go here
+        // No automatic AP gain from item usage
+    }
+    
+    applyDamageToEnemy(enemy, damage) {
+        console.log(`[BattleScene] Applying ${damage} damage to ${enemy.enemyData.type}`);
+        
+        enemy.enemyData.health = Math.max(0, enemy.enemyData.health - damage);
+        
+        // Alert NPC AI that it has been attacked (triggers combat mode)
+        if (this.npcMovementData.has(enemy)) {
+            const npcData = this.npcMovementData.get(enemy);
+            if (!npcData.hasBeenAttacked) {
+                npcData.hasBeenAttacked = true;
+                console.log(`[NPC AI] ${enemy.enemyData.type} has been attacked by player - entering combat mode!`);
+            }
+        }
+        
+        // Visual feedback
+        const originalColor = enemy.enemyData.color;
+        enemy.setFillStyle(0xffff00);
+        this.time.delayedCall(100, () => {
+            enemy.setFillStyle(originalColor);
+        });
+        
+        // Check for defeat
+        if (enemy.enemyData.health <= 0) {
+            console.log(`[BattleScene] ${enemy.enemyData.type} defeated`);
+            this.handleEnemyDefeat(enemy);
+        }
+        
+        // No automatic AP gain from hitting enemies
+    }
+    
+    triggerEnemyTurn() {
+        // Prevent triggering enemy turn if already in enemy phase or if no enemies
+        if (this.turnPhase === 'enemy' || this.enemies.length === 0) {
+            return;
+        }
+        
+        console.log('[BattleScene] Triggering enemy turn');
+        this.isPlayerTurn = false;
+        this.turnPhase = 'enemy';
+        
+        // Clear any existing enemy action queue and timeout
+        this.enemyActionQueue = [];
+        if (this.enemyTurnTimeout) {
+            this.time.removeEvent(this.enemyTurnTimeout);
+            this.enemyTurnTimeout = null;
+        }
+        
+        // Queue enemy actions
+        this.enemies.forEach(enemy => {
+            if (enemy && enemy.active && enemy.enemyData.health > 0) {
+                this.enemyActionQueue.push({
+                    enemy: enemy,
+                    action: this.getEnemyAction(enemy),
+                    delay: Math.random() * 500 + 500 // 500-1000ms delay
+                });
+            }
+        });
+        
+        // Set a timeout to force return to player turn (safety mechanism)
+        this.enemyTurnTimeout = this.time.delayedCall(5000, () => {
+            console.log('[BattleScene] Enemy turn timeout - forcing return to player turn');
+            this.isPlayerTurn = true;
+            this.turnPhase = 'action';
+            this.enemyActionQueue = [];
+        });
+        
+        // Execute enemy actions
+        this.executeEnemyActions();
+    }
+    
+    getEnemyAction(enemy) {
+        const npcType = enemy.enemyData.type;
+        
+        switch (npcType) {
+            case 'GUARD':
+                return Math.random() > 0.5 ? 'melee' : 'projectile';
+            case 'MERCHANT':
+                return 'projectile'; // Merchants only use projectiles
+            case 'VILLAGER':
+                return 'melee'; // Villagers only use melee
+            default:
+                return 'melee';
+        }
+    }
+    
+    executeEnemyActions() {
+        if (this.enemyActionQueue.length === 0) {
+            // All enemy actions complete, return to player turn
+            this.isPlayerTurn = true;
+            this.turnPhase = 'action';
+            
+            // Clear the timeout since we completed normally
+            if (this.enemyTurnTimeout) {
+                this.time.removeEvent(this.enemyTurnTimeout);
+                this.enemyTurnTimeout = null;
+            }
+            
+            console.log('[BattleScene] Enemy turn complete, returning to player turn');
+            return;
+        }
+        
+        const action = this.enemyActionQueue.shift();
+        
+        // Add safety check to prevent infinite loops
+        if (!action || !action.enemy || !action.enemy.active) {
+            console.log('[BattleScene] Invalid enemy action, skipping');
+            this.executeEnemyActions(); // Continue with next action
+            return;
+        }
+        
+        this.time.delayedCall(action.delay, () => {
+            // Double-check enemy is still valid before performing action
+            if (action.enemy && action.enemy.active && action.enemy.enemyData.health > 0) {
+                this.performEnemyAction(action.enemy, action.action);
+            }
+            this.executeEnemyActions(); // Continue with next action
+        });
+    }
+    
+    performEnemyAction(enemy, actionType) {
+        console.log(`[BattleScene] ${enemy.enemyData.type} performs ${actionType} action`);
+        
+        const damage = this.getEnemyDamage(enemy.enemyData.type, actionType);
+        
+        if (actionType === 'melee') {
+            this.performEnemyMeleeAttack(enemy, damage);
+        } else if (actionType === 'projectile') {
+            this.performEnemyProjectileAttack(enemy, damage);
+        }
+    }
+    
+    getEnemyDamage(npcType, actionType) {
+        const baseDamage = {
+            'GUARD': 25,
+            'MERCHANT': 15,
+            'VILLAGER': 10
+        };
+        
+        return baseDamage[npcType] || 10;
+    }
+    
+    performEnemyMeleeAttack(enemy, damage) {
+        console.log(`[BattleScene] ${enemy.enemyData.type} performs melee attack for ${damage} damage`);
+        
+        // Create enemy attack hitbox
+        const attackX = enemy.x;
+        const attackY = enemy.y;
+        
+        const enemyAttack = this.add.rectangle(
+            attackX,
+            attackY,
+            this.attackWidth,
+            this.attackHeight,
+            0xff0000
+        );
+        
+        this.physics.add.existing(enemyAttack);
+        enemyAttack.body.setAllowGravity(false);
+        
+        // Check for collision with player
+        this.physics.add.overlap(enemyAttack, this.player, () => {
+            this.applyDamageToPlayer(damage);
+            enemyAttack.destroy();
+        });
+        
+        // Remove attack after duration
+        this.time.delayedCall(this.attackDuration, () => {
+            enemyAttack.destroy();
+        });
+    }
+    
+    performEnemyProjectileAttack(enemy, damage) {
+        console.log(`[BattleScene] ${enemy.enemyData.type} performs projectile attack for ${damage} damage`);
+        
+        // Create enemy projectile
+        const projectile = this.add.rectangle(
+            enemy.x,
+            enemy.y,
+            this.projectileSize,
+            this.projectileSize,
+            0xff0000
+        );
+        
+        this.physics.add.existing(projectile);
+        projectile.body.setAllowGravity(false);
+        
+        // Move projectile toward player
+        const direction = this.player.x > enemy.x ? 1 : -1;
+        projectile.body.setVelocityX(this.projectileSpeed * direction);
+        
+        // Apply damage on hit
+        this.physics.add.overlap(projectile, this.player, () => {
+            this.applyDamageToPlayer(damage);
+            projectile.destroy();
+        });
+        
+        // Remove projectile after duration
+        this.time.delayedCall(this.secondaryAttackDuration, () => {
+            if (projectile && projectile.active) {
+                projectile.destroy();
+            }
+        });
+    }
+    
+    applyDamageToPlayer(damage) {
+        console.log(`[BattleScene] Player takes ${damage} damage`);
+        
+        // Apply damage to player (this would integrate with player health system)
+        // Gain AP from taking damage (5 AP per damage point)
+        this.gainAP(5, 'damage');
+        
+        // Visual feedback
+        this.player.setAlpha(0.5);
+        this.time.delayedCall(200, () => {
+            this.player.setAlpha(1);
+        });
     }
 
     dash() {
         this.isDashing = true;
+        this.isDashingAP = true; // Start consuming AP for dash
         this.canDash = false;
         
-        // Determine dash direction based on last movement or facing direction
+        // Find closest enemy to determine default dash direction
+        const closestEnemy = this.findClosestEnemy();
+        let defaultDirection = 1; // Default to right if no enemies
+        
+        if (closestEnemy) {
+            // Dash toward closest enemy by default
+            defaultDirection = this.player.x < closestEnemy.x ? 1 : -1;
+        }
+        
+        // Allow player to override direction with left/right keys
         const dashDirection = this.wasdKeys.left.isDown ? -1 : 
                             this.wasdKeys.right.isDown ? 1 : 
-                            this.player.x < this.enemies[0].x ? 1 : -1;
+                            defaultDirection;
         
         // Apply dash velocity
         this.player.body.setVelocityX(this.dashSpeed * dashDirection);
@@ -1236,16 +3217,21 @@ export default class BattleScene extends Phaser.Scene {
         this.player.setAlpha(0.7);
         
         console.log('[Dash] Executing dash:', {
-            direction: dashDirection,
-            speed: this.dashSpeed
+            direction: dashDirection > 0 ? 'right' : 'left',
+            towardEnemy: closestEnemy ? closestEnemy.enemyData.type : 'none',
+            speed: this.dashSpeed,
+            duration: this.dashDuration,
+            apCostPerSecond: this.dashAPCost,
+            currentAP: Math.floor(this.currentAP)
         });
 
         // Reset dash after duration
         this.time.delayedCall(this.dashDuration, () => {
             this.isDashing = false;
+            this.isDashingAP = false; // Stop consuming AP for dash
             this.player.setAlpha(1);
             this.player.body.setVelocityX(0);
-            console.log('[Dash] Dash completed');
+            console.log('[Dash] Dash completed, AP remaining:', Math.floor(this.currentAP));
         });
 
         // Reset dash cooldown
@@ -1685,6 +3671,324 @@ export default class BattleScene extends Phaser.Scene {
         this.chargeBar.setOrigin(0, 0.5);
         this.chargeBar.setVisible(false);
     }
+    
+    createAPGauge() {
+        console.log('[BattleScene] Creating AP gauge');
+        
+        const viewportWidth = this.cameras.main.width;
+        const viewportHeight = this.cameras.main.height;
+        
+        // AP gauge background (full width at bottom)
+        this.apGaugeBackground = this.add.rectangle(
+            viewportWidth / 2,
+            viewportHeight - 20,
+            viewportWidth - 40,
+            20,
+            0x333333
+        );
+        this.apGaugeBackground.setDepth(1000);
+        
+        // AP gauge fill
+        this.apGauge = this.add.rectangle(
+            20,
+            viewportHeight - 20,
+            (viewportWidth - 40) * (this.currentAP / this.maxAP),
+            20,
+            0x00ff00
+        );
+        this.apGauge.setOrigin(0, 0.5);
+        this.apGauge.setDepth(1001);
+        
+        // AP text
+        this.apGaugeText = this.add.text(
+            20,
+            viewportHeight - 20,
+            'AP',
+            {
+                fontSize: '16px',
+                fontFamily: 'Arial',
+                color: '#FFFFFF',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        );
+        this.apGaugeText.setOrigin(0, 0.5);
+        this.apGaugeText.setDepth(1002);
+        
+        // AP value text
+        this.apValueText = this.add.text(
+            viewportWidth - 20,
+            viewportHeight - 20,
+            `${this.currentAP}/${this.maxAP}`,
+            {
+                fontSize: '14px',
+                fontFamily: 'Arial',
+                color: '#FFFFFF',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        );
+        this.apValueText.setOrigin(1, 0.5);
+        this.apValueText.setDepth(1002);
+        
+        console.log('[BattleScene] AP gauge created');
+    }
+    
+    initializeParty() {
+        console.log('[BattleScene] Initializing party system');
+        
+        // For now, create a single party member (the player)
+        // Later this will be expanded when more characters join
+        this.partyMembers = [
+            {
+                id: 'player',
+                name: 'Player',
+                type: 'Player',
+                level: this.playerData?.level || 1,
+                health: this.playerData?.health || 100,
+                maxHealth: this.playerData?.maxHealth || 100,
+                abilities: ['basicAttack', 'specialAttack'],
+                apCosts: {
+                    basicAttack: 15,
+                    specialAttack: 30
+                }
+            }
+        ];
+        
+        this.activeCharacterIndex = 0;
+        this.activeCharacter = this.partyMembers[0];
+        
+        console.log('[BattleScene] Party initialized:', this.partyMembers);
+    }
+    
+    /**
+     * Activate group movement mode (key 0)
+     * All characters move together
+     */
+    activateGroupMovement() {
+        this.groupMovementMode = true;
+        this.activeCharacterIndex = -1; // -1 indicates group mode
+        
+        console.log('[BattleScene] 🟢 GROUP MOVEMENT ACTIVATED - All characters move together');
+        this.showControlModeMessage('GROUP MOVEMENT', 'All characters move together', '#00ff00');
+    }
+    
+    /**
+     * Switch to controlling a specific character (keys 1-4)
+     * @param {number} characterIndex - 0 for player, 1-3 for party members
+     */
+    switchToCharacter(characterIndex) {
+        if (this.characterSwitchCooldown > 0) return;
+        
+        this.groupMovementMode = false;
+        this.activeCharacterIndex = characterIndex;
+        this.characterSwitchCooldown = this.characterSwitchDelay;
+        
+        const characterName = characterIndex === 0 ? 'PLAYER' : 
+            (this.partyCharacters[characterIndex - 1]?.memberData.name || `MEMBER ${characterIndex}`);
+        
+        console.log(`[BattleScene] 🎯 INDIVIDUAL CONTROL - ${characterName}`);
+        this.showControlModeMessage(`CONTROLLING: ${characterName}`, 'WASD to move this character', '#FFD700');
+    }
+    
+    /**
+     * Get the currently active character's game object
+     * @returns {Phaser.GameObjects.Rectangle} The active character or player
+     */
+    getActiveCharacterObject() {
+        if (this.activeCharacterIndex === 0) {
+            return this.player;
+        } else if (this.activeCharacterIndex > 0 && this.activeCharacterIndex <= this.partyCharacters.length) {
+            return this.partyCharacters[this.activeCharacterIndex - 1];
+        }
+        return this.player; // Default to player
+    }
+    
+    /**
+     * Show control mode change message
+     */
+    showControlModeMessage(title, description, color) {
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        const modeText = this.add.text(
+            centerX,
+            centerY - 150,
+            `${title}\n${description}`,
+            {
+                fontSize: '24px',
+                fontFamily: 'Arial',
+                color: color,
+                stroke: '#000000',
+                strokeThickness: 4,
+                fontStyle: 'bold',
+                align: 'center'
+            }
+        );
+        modeText.setOrigin(0.5);
+        modeText.setDepth(2000);
+        
+        // Animate
+        this.tweens.add({
+            targets: modeText,
+            alpha: 0,
+            y: centerY - 200,
+            duration: 1500,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                modeText.destroy();
+            }
+        });
+    }
+    
+    // OLD switchCharacter method (Q/E keys) - kept for backwards compatibility
+    switchCharacter(direction) {
+        if (this.characterSwitchCooldown > 0) return;
+        
+        const oldIndex = this.activeCharacterIndex;
+        
+        if (direction === 'left') {
+            this.activeCharacterIndex = (this.activeCharacterIndex - 1 + this.partyMembers.length) % this.partyMembers.length;
+        } else {
+            this.activeCharacterIndex = (this.activeCharacterIndex + 1) % this.partyMembers.length;
+        }
+        
+        if (oldIndex !== this.activeCharacterIndex) {
+            this.activeCharacter = this.partyMembers[this.activeCharacterIndex];
+            this.characterSwitchCooldown = this.characterSwitchDelay;
+            
+            console.log(`[BattleScene] Switched to character ${this.activeCharacterIndex}: ${this.activeCharacter.name}`);
+            
+            // Visual feedback for character switch
+            this.showCharacterSwitchFeedback();
+        }
+    }
+    
+    showCharacterSwitchFeedback() {
+        // Create temporary text showing active character
+        const centerX = this.cameras.main.width / 2;
+        const centerY = this.cameras.main.height / 2;
+        
+        const switchText = this.add.text(
+            centerX,
+            centerY - 100,
+            `Active: ${this.activeCharacter.name}`,
+            {
+                fontSize: '24px',
+                fontFamily: 'Arial',
+                color: '#FFD700',
+                stroke: '#000000',
+                strokeThickness: 3
+            }
+        );
+        switchText.setOrigin(0.5);
+        switchText.setDepth(1000);
+        
+        // Animate in and out
+        this.tweens.add({
+            targets: switchText,
+            alpha: 0,
+            y: centerY - 150,
+            duration: 1000,
+            ease: 'Power2.Out',
+            onComplete: () => {
+                switchText.destroy();
+            }
+        });
+    }
+    
+    updateAP(delta) {
+        // Update cooldowns
+        this.characterSwitchCooldown = Math.max(0, this.characterSwitchCooldown - delta);
+        
+        // AP consumption for movement
+        if (this.isMoving && this.currentAP > 0) {
+            this.currentAP = Math.max(0, this.currentAP - (this.movementAPCost * delta / 1000));
+        }
+        
+        // AP consumption for dashing (double the cost of movement)
+        if (this.isDashingAP && this.currentAP > 0) {
+            this.currentAP = Math.max(0, this.currentAP - (this.dashAPCost * delta / 1000));
+        }
+        
+        // AP regeneration only while charging
+        if (this.isChargingAP && this.currentAP < this.maxAP) {
+            const apGain = this.chargeAPRate * delta / 1000;
+            this.currentAP = Math.min(this.maxAP, this.currentAP + apGain);
+            
+            // Only log occasionally to reduce spam
+            if (Math.random() < 0.1) { // Log 10% of the time
+                console.log(`[BattleScene] Charging AP: ${Math.floor(this.currentAP)}/${this.maxAP} (gained ${apGain.toFixed(2)})`);
+            }
+        }
+        
+        // Allow NPCs to act while player is charging (but not continuously)
+        if (this.isChargingAP && this.enemies.length > 0 && this.turnPhase === 'action') {
+            // Only trigger enemy turn once when charging starts
+            if (!this.enemyTurnTriggeredWhileCharging) {
+                this.enemyTurnTriggeredWhileCharging = true;
+                this.triggerEnemyTurn();
+            }
+        } else if (!this.isChargingAP) {
+            // Reset the flag when not charging
+            this.enemyTurnTriggeredWhileCharging = false;
+        }
+        
+        // Update AP gauge visual
+        this.updateAPGauge();
+    }
+    
+    updateAPGauge() {
+        if (!this.apGauge || !this.apGaugeBackground) return;
+        
+        const viewportWidth = this.cameras.main.width;
+        const viewportHeight = this.cameras.main.height;
+        const gaugeWidth = viewportWidth - 40;
+        const currentWidth = gaugeWidth * (this.currentAP / this.maxAP);
+        
+        // Update gauge width
+        this.apGauge.width = currentWidth;
+        
+        // Update position to stay at left edge
+        this.apGauge.x = 20;
+        this.apGauge.y = viewportHeight - 20;
+        
+        // Update AP value text
+        if (this.apValueText) {
+            this.apValueText.setText(`${Math.floor(this.currentAP)}/${this.maxAP}`);
+        }
+        
+        // Change color based on AP level
+        if (this.currentAP < 20) {
+            this.apGauge.setFillStyle(0xff0000); // Red when low
+        } else if (this.currentAP < 50) {
+            this.apGauge.setFillStyle(0xffff00); // Yellow when medium
+        } else {
+            this.apGauge.setFillStyle(0x00ff00); // Green when high
+        }
+    }
+    
+    consumeAP(amount) {
+        if (this.currentAP >= amount) {
+            this.currentAP = Math.max(0, this.currentAP - amount);
+            console.log(`[BattleScene] Consumed ${amount} AP, remaining: ${this.currentAP}`);
+            return true;
+        } else {
+            console.log(`[BattleScene] Not enough AP! Need ${amount}, have ${this.currentAP}`);
+            return false;
+        }
+    }
+    
+    gainAP(amount, source = 'unknown') {
+        this.currentAP = Math.min(this.maxAP, this.currentAP + amount);
+        console.log(`[BattleScene] Gained ${amount} AP from ${source}, total: ${this.currentAP}`);
+    }
+    
+    resetAP() {
+        this.currentAP = this.maxAP;
+        console.log(`[BattleScene] AP reset to full: ${this.currentAP}/${this.maxAP}`);
+        this.updateAPGauge();
+    }
 
     updateEnemyDisplays() {
         // Now handled by HUD system
@@ -1731,13 +4035,16 @@ export default class BattleScene extends Phaser.Scene {
         });
         this.enemies = [];
         
-        // Destroy all projectiles
-        if (this.projectiles && Array.isArray(this.projectiles)) {
-            this.projectiles.forEach(projectile => {
-                if (projectile && projectile.destroy) projectile.destroy();
-            });
-        }
-        this.projectiles = [];
+        // Destroy party characters
+        this.partyCharacters.forEach(character => {
+            if (character && character.active) {
+                if (character.memberData && character.memberData.indicator) {
+                    character.memberData.indicator.destroy();
+                }
+                character.destroy();
+            }
+        });
+        this.partyCharacters = [];
         
         // Destroy all text displays (victory text only now)
         if (this.textDisplays && Array.isArray(this.textDisplays)) {
@@ -1755,22 +4062,40 @@ export default class BattleScene extends Phaser.Scene {
         
         // Reset input and action states
         this.isReturning = false;
-        this.isAttacking = false;
-        this.isSecondaryAttacking = false;
-        this.isCharging = false;
         this.isDashing = false;
         this.canDash = true;
-        this.canShootProjectile = true;
-        this.isKeyPressed = false;
-        this.projectileCount = 0;
-        this.chargeTime = 0;
-        this.chargeStartTime = 0;
         this.isVictorySequence = false;
         this.defeatedEnemyIds = [];
         
-        // Hide charge bars
-        if (this.chargeBarBackground) this.chargeBarBackground.setVisible(false);
-        if (this.chargeBar) this.chargeBar.setVisible(false);
+        // Reset combo system
+        this.comboCount = 0;
+        this.lastComboTime = 0;
+        this.canCombo = true;
+        
+        // Hide AP gauge
+        if (this.apGaugeBackground) this.apGaugeBackground.setVisible(false);
+        if (this.apGauge) this.apGauge.setVisible(false);
+        if (this.apGaugeText) this.apGaugeText.setVisible(false);
+        if (this.apValueText) this.apValueText.setVisible(false);
+        
+        // Clean up range indicators
+        if (this.rangeIndicators && Array.isArray(this.rangeIndicators)) {
+            this.rangeIndicators.forEach(indicator => {
+                if (indicator && indicator.destroy) indicator.destroy();
+            });
+        }
+        this.rangeIndicators = [];
+        
+        // Clean up NPC movement data
+        if (this.npcMovementData) {
+            this.npcMovementData.clear();
+        }
+        
+        // Clean up checkerboard ground
+        if (this.checkerboardGround) {
+            this.checkerboardGround.destroy();
+            this.checkerboardGround = null;
+        }
         
         // Clear all tweens and timers
         this.tweens.killAll();
@@ -1778,6 +4103,12 @@ export default class BattleScene extends Phaser.Scene {
         // Clear all delayed calls/timers
         if (this.time && this.time.removeAllEvents) {
             this.time.removeAllEvents();
+        }
+        
+        // Clear enemy turn timeout
+        if (this.enemyTurnTimeout) {
+            this.time.removeEvent(this.enemyTurnTimeout);
+            this.enemyTurnTimeout = null;
         }
         
         console.log('[BattleScene] Cleanup complete');
@@ -1961,47 +4292,8 @@ export default class BattleScene extends Phaser.Scene {
         return colors[optionId] || '#FFFFFF';
     }
     
-    handleDialogueChoice(choiceId, optionData) {
-        console.log('[BattleScene] Player chose:', choiceId);
-        this.dialogueChoice = choiceId;
-        
-        // Remove dialogue overlay
-        if (this.dialogueOverlay) {
-            this.dialogueOverlay.remove();
-            this.dialogueOverlay = null;
-        }
-        
-        this.isDialogueActive = false;
-        
-        // Handle the choice
-        switch (choiceId) {
-            case 'fight':
-                // Proceed to battle
-                this.setupBattle();
-                break;
-                
-            case 'negotiate_money':
-                this.handleMoneyNegotiation(optionData.cost);
-                break;
-                
-            case 'negotiate_item':
-                this.showItemSelectionDialog(optionData.availableItems, optionData.requiredValue);
-                break;
-                
-            case 'flee':
-                this.handleFleeAttempt();
-                break;
-        }
-    }
-    
-    handleMoneyNegotiation(cost) {
-        const leadNpc = this.npcDataArray[0];
-        const result = dialogueManager.negotiateWithMoney(leadNpc, cost);
-        
-        console.log('[BattleScene] Money negotiation result:', result);
-        
-        this.showNegotiationResult(result);
-    }
+    // REMOVED: Duplicate handleDialogueChoice method (old system)
+    // The correct handleDialogueChoice is at line ~1190 and handles recruitment
     
     showItemSelectionDialog(availableItems, requiredValue) {
         console.log('[BattleScene] Showing item selection dialog');
@@ -2123,106 +4415,11 @@ export default class BattleScene extends Phaser.Scene {
         this.showNegotiationResult(result);
     }
     
-    handleFleeAttempt() {
-        const leadNpc = this.npcDataArray[0];
-        const result = dialogueManager.attemptFlee(leadNpc);
-        
-        console.log('[BattleScene] Flee attempt result:', result);
-        
-        if (result.success) {
-            // Successfully fled
-            this.showFleeResult(result);
-        } else {
-            // Failed to flee, must fight
-            this.showFleeResult(result, () => {
-                this.setupBattle();
-            });
-        }
-    }
+    // REMOVED: Duplicate handleFleeAttempt method (old system)
+    // The correct handleFleeAttempt is at line ~1569 and takes npcData parameter
     
-    showNegotiationResult(result) {
-        // Create result overlay
-        const resultOverlay = document.createElement('div');
-        resultOverlay.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 10002;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-family: Arial, sans-serif;
-        `;
-        
-        const content = document.createElement('div');
-        content.style.cssText = `
-            max-width: 500px;
-            padding: 30px;
-            background: ${result.success ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 0, 0, 0.1)'};
-            border: 3px solid ${result.success ? '#00FF00' : '#FF4444'};
-            border-radius: 15px;
-            text-align: center;
-        `;
-        
-        const title = document.createElement('div');
-        title.style.cssText = `
-            font-size: 32px;
-            font-weight: bold;
-            color: ${result.success ? '#00FF00' : '#FF4444'};
-            margin-bottom: 20px;
-        `;
-        title.textContent = result.success ? '✓ Success!' : '✗ Failed';
-        content.appendChild(title);
-        
-        const message = document.createElement('div');
-        message.style.cssText = `
-            font-size: 18px;
-            color: #FFF;
-            margin-bottom: 20px;
-        `;
-        message.textContent = result.message;
-        content.appendChild(message);
-        
-        if (result.success && result.xpGained) {
-            const xpDisplay = document.createElement('div');
-            xpDisplay.style.cssText = `
-                font-size: 20px;
-                color: #00D9FF;
-                margin: 15px 0;
-            `;
-            xpDisplay.textContent = `+${result.xpGained} XP earned`;
-            content.appendChild(xpDisplay);
-            
-            if (result.leveledUp) {
-                const levelUp = document.createElement('div');
-                levelUp.style.cssText = `
-                    font-size: 24px;
-                    color: #FFD700;
-                    font-weight: bold;
-                `;
-                levelUp.textContent = `🎉 Level Up! Now Level ${result.newLevel}`;
-                content.appendChild(levelUp);
-            }
-        }
-        
-        resultOverlay.appendChild(content);
-        document.body.appendChild(resultOverlay);
-        
-        // Auto-close after 3 seconds
-        setTimeout(() => {
-            resultOverlay.remove();
-            if (result.success) {
-                // Return to world
-                this.handleNegotiationVictory();
-            } else {
-                // Must fight
-                this.setupBattle();
-            }
-        }, 3000);
-    }
+    // REMOVED: Duplicate showNegotiationResult method (old system)
+    // The correct showNegotiationResult is at line ~1582 and takes (result, npcData) parameters
     
     showFleeResult(result, onComplete = null) {
         const resultOverlay = document.createElement('div');
@@ -2272,26 +4469,8 @@ export default class BattleScene extends Phaser.Scene {
         }, 2000);
     }
     
-    handleNegotiationVictory() {
-        console.log('[BattleScene] Negotiation successful, returning to world');
-        
-        // Mark NPCs as defeated (negotiated away)
-        this.defeatedEnemyIds = this.npcDataArray.map(npc => npc.id);
-        
-        const transitionData = {
-            battleVictory: true,
-            returnPosition: this.worldPosition,
-            defeatedNpcIds: this.defeatedEnemyIds,
-            transitionType: 'negotiation'
-        };
-        
-        console.log('[BattleScene] Negotiation victory transition data:', transitionData);
-        
-        // Clean up and return
-        this.cleanup();
-        this.scene.resume('WorldScene', transitionData);
-        this.scene.stop();
-    }
+    // REMOVED: Duplicate handleNegotiationVictory method (old system)
+    // The correct handleNegotiationVictory is at line ~1700 and takes npcData parameter
 
     animateXpCounter(xpText, totalXp) {
         console.log(`[BattleScene] Animating XP counter from 0 to ${totalXp}`);
@@ -2386,6 +4565,19 @@ export default class BattleScene extends Phaser.Scene {
             
             console.log('[BattleScene] Stored defeated enemy ID:', enemy.enemyData.id);
             console.log('[BattleScene] Total defeated in this battle:', this.defeatedEnemyIds);
+        }
+        
+        // Find enemy index to remove corresponding range indicator
+        const enemyIndex = this.enemies.indexOf(enemy);
+        if (enemyIndex !== -1 && this.rangeIndicators[enemyIndex]) {
+            this.rangeIndicators[enemyIndex].destroy();
+            this.rangeIndicators.splice(enemyIndex, 1);
+        }
+        
+        // Clean up NPC movement data
+        if (this.npcMovementData.has(enemy)) {
+            this.npcMovementData.delete(enemy);
+            console.log('[BattleScene] Removed NPC movement data for defeated enemy');
         }
         
         // Remove enemy (no Phaser text displays to clean up - using DOM only)

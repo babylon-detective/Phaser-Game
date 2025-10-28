@@ -14,7 +14,10 @@ export default class BattleMenuScene extends Phaser.Scene {
     init(data) {
         console.log('[BattleMenuScene] Initializing with data:', data);
         this.enemies = data?.enemies || [];
+        this.partyMembers = data?.partyMembers || [];
         this.battleScene = this.scene.get('BattleScene');
+        
+        console.log('[BattleMenuScene] Party members:', this.partyMembers);
     }
 
     create() {
@@ -200,6 +203,103 @@ export default class BattleMenuScene extends Phaser.Scene {
             </div>
         `;
         this.menuContainer.appendChild(this.descriptionPanel);
+
+        // Party display panel (right side)
+        this.createPartyPanel();
+    }
+
+    createPartyPanel() {
+        // Get player stats from GameStateManager
+        const playerStats = gameStateManager.getPlayerStats();
+        
+        const partyPanel = document.createElement('div');
+        partyPanel.style.cssText = `
+            position: absolute;
+            right: 30px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border: 3px solid #FFD700;
+            border-radius: 15px;
+            color: #FFF;
+            min-width: 280px;
+            pointer-events: auto;
+        `;
+
+        let partyHTML = `
+            <div style="font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #FFD700; text-align: center;">
+                ⚔️ PARTY
+            </div>
+        `;
+
+        // Display Player (always first)
+        const playerHPPercent = (playerStats.health / playerStats.maxHealth) * 100;
+        let playerHPColor = '#00ff00';
+        if (playerHPPercent < 25) playerHPColor = '#ff0000';
+        else if (playerHPPercent < 50) playerHPColor = '#ffff00';
+
+        partyHTML += `
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 10px;">
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <div style="width: 10px; height: 10px; background: #ff0000; border-radius: 2px; margin-right: 8px;"></div>
+                    <div style="flex: 1;">
+                        <div style="font-size: 16px; font-weight: bold; color: #FFD700;">PLAYER</div>
+                        <div style="font-size: 12px; color: #AAA;">Level ${playerStats.level}</div>
+                    </div>
+                </div>
+                <div style="margin-bottom: 5px; display: flex; justify-content: space-between; font-size: 12px;">
+                    <span style="color: #AAA;">HP</span>
+                    <span style="color: ${playerHPColor};">${playerStats.health}/${playerStats.maxHealth}</span>
+                </div>
+                <div style="background: #333; height: 8px; border-radius: 4px; overflow: hidden;">
+                    <div style="background: linear-gradient(90deg, ${playerHPColor}, ${playerHPColor}AA); height: 100%; width: ${playerHPPercent}%;"></div>
+                </div>
+            </div>
+        `;
+
+        // Display Party Members
+        if (this.partyMembers && this.partyMembers.length > 0) {
+            this.partyMembers.forEach((member, index) => {
+                const hpPercent = (member.currentHP / member.maxHP) * 100;
+                let hpColor = '#00ff00';
+                if (hpPercent < 25) hpColor = '#ff0000';
+                else if (hpPercent < 50) hpColor = '#ffff00';
+
+                const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+
+                partyHTML += `
+                    <div style="margin-bottom: 15px; padding: 12px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <div style="width: 10px; height: 10px; background: ${colorHex}; border-radius: 2px; margin-right: 8px;"></div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 16px; font-weight: bold; color: ${colorHex};">${member.name.toUpperCase()}</div>
+                                <div style="font-size: 12px; color: #AAA;">Level ${member.level}</div>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 5px; display: flex; justify-content: space-between; font-size: 12px;">
+                            <span style="color: #AAA;">HP</span>
+                            <span style="color: ${hpColor};">${member.currentHP}/${member.maxHP}</span>
+                        </div>
+                        <div style="background: #333; height: 8px; border-radius: 4px; overflow: hidden;">
+                            <div style="background: linear-gradient(90deg, ${hpColor}, ${hpColor}AA); height: 100%; width: ${hpPercent}%;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // Show party size
+        const totalPartySize = 1 + (this.partyMembers ? this.partyMembers.length : 0);
+        partyHTML += `
+            <div style="text-align: center; padding-top: 10px; border-top: 1px solid #333; margin-top: 10px;">
+                <div style="font-size: 12px; color: #888;">Party Size</div>
+                <div style="font-size: 16px; color: #FFD700; font-weight: bold;">${totalPartySize} / 4</div>
+            </div>
+        `;
+
+        partyPanel.innerHTML = partyHTML;
+        this.menuContainer.appendChild(partyPanel);
     }
 
     updateIconSelection() {

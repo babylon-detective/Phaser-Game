@@ -3,6 +3,7 @@ import Phaser from "phaser";
 import SaveState from "../SaveState";
 import PlayerManager from "../managers/PlayerManager";
 import NpcManager from "../managers/NpcManager";
+import PartyManager from "../managers/PartyManager";
 import HUDManager from "../ui/HUDManager";
 import MapScene from "./MapScene";
 import { gameStateManager } from "../managers/GameStateManager.js";
@@ -173,6 +174,17 @@ export default class WorldScene extends Phaser.Scene {
         });
         this.npcManager.create();
 
+        // Create party manager (must be after NPC manager)
+        this.partyManager = new PartyManager(this);
+        this.partyManager.init();
+        
+        // Add recruitable NPCs to NPC Manager for battle triggering
+        const recruitableNPCs = this.partyManager.getRecruitableNPCObjects();
+        recruitableNPCs.forEach(npc => {
+            this.npcManager.npcs.push(npc);
+        });
+        console.log('[WorldScene] Added recruitable NPCs to NPC manager:', recruitableNPCs.length);
+
         // Create HUD
         this.hudManager = new HUDManager(this);
         this.hudManager.create();
@@ -189,6 +201,12 @@ export default class WorldScene extends Phaser.Scene {
             remainingCount 
         });
         this.hudManager.updateNPCCount(defeatedCount, remainingCount);
+        
+        // Set up party menu key (TAB key to view party)
+        this.input.keyboard.on('keydown-TAB', () => {
+            console.log('[WorldScene] TAB pressed - opening party menu');
+            this.openPartyMenu();
+        });
 
         // Set up camera to follow player AFTER player is created
         if (this.playerManager.player) {
@@ -341,6 +359,41 @@ export default class WorldScene extends Phaser.Scene {
         console.log('[WorldScene] handleResumeData called with:', data);
         
         if (!data) return;
+        
+        // Process recruitment
+        if (data.transitionType === 'recruitment' && data.recruitedNpcId) {
+            console.log('[WorldScene] Processing recruitment:', data.recruitedNpcId);
+            
+            // Handle recruitment in PartyManager (makes NPC follow player)
+            if (this.partyManager) {
+                this.partyManager.handleRecruitmentSuccess(data.recruitedNpcId);
+                console.log('[WorldScene] Party manager updated for recruitment');
+            }
+            
+            // Remove recruited NPC from NPC manager's battle trigger list
+            if (this.npcManager) {
+                this.npcManager.npcs = this.npcManager.npcs.filter(npc => {
+                    if (npc.npcData && npc.npcData.id === data.recruitedNpcId) {
+                        console.log('[WorldScene] Removing recruited NPC from battle triggers:', npc.npcData.id);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            
+            // Set player position
+            if (data.returnPosition && this.playerManager && this.playerManager.player) {
+                this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
+                this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+            }
+            
+            // Apply battle end cooldown
+            if (this.npcManager) {
+                this.npcManager.handleBattleEnd();
+            }
+            
+            return; // Early return for recruitment
+        }
         
         // Process battle victory and defeated NPCs
         if (data.battleVictory && data.transitionType === 'victory') {
@@ -496,6 +549,9 @@ export default class WorldScene extends Phaser.Scene {
     update() {
         // Player update
         this.playerManager?.update();
+
+        // Party update (recruited members follow player)
+        this.partyManager?.update();
 
         // NPC update
         this.npcManager?.update();
@@ -766,11 +822,168 @@ export default class WorldScene extends Phaser.Scene {
         // Pause this scene instead of stopping it
         this.scene.pause();
         
-        // Start battle scene with NPC state
+        // Get party members for battle
+        const partyMembers = this.partyManager ? this.partyManager.getPartyForBattle() : [];
+        console.log('[WorldScene] Launching battle with party:', partyMembers);
+        
+        // Start battle scene with NPC state and party data
         this.scene.launch('BattleScene', {
             playerData,
             npcDataArray: npcs,
-            npcState: npcState
+            npcState: npcState,
+            partyMembers: partyMembers
         });
     }
+    
+    openPartyMenu() {
+        console.log('[WorldScene] Opening party menu');
+        
+        // Get player stats
+        const playerStats = gameStateManager.getPlayerStats();
+        
+        // Get party members
+        const partyMembers = this.partyManager ? this.partyManager.partyMembers : [];
+        
+        // Create overlay
+        const partyOverlay = document.createElement('div');
+        partyOverlay.id = 'world-party-menu';
+        partyOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            font-family: Arial, sans-serif;
+        `;
+        
+        let menuHTML = `
+            <div style="max-width: 800px; padding: 30px; background: linear-gradient(135deg, #1a1a2e, #16213e); border: 3px solid #FFD700; border-radius: 15px; color: white; max-height: 80vh; overflow-y: auto;">
+                <h2 style="color: #FFD700; margin: 0 0 20px 0; text-align: center;">⚔️ PARTY STATUS</h2>
+                
+                <div style="margin-bottom: 20px; padding: 15px; background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="width: 12px; height: 12px; background: #ff0000; border-radius: 3px;"></div>
+                                <div style="font-size: 20px; font-weight: bold; color: #FFD700;">PLAYER</div>
+                            </div>
+                            <div style="font-size: 14px; color: #AAA; margin-top: 5px;">Level ${playerStats.level} • ${playerStats.experience} XP</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                        <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                            <div style="font-size: 12px; color: #888;">Health</div>
+                            <div style="font-size: 18px; color: #00ff00;">${playerStats.health}</div>
+                        </div>
+                        <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                            <div style="font-size: 12px; color: #888;">Attack</div>
+                            <div style="font-size: 18px; color: #ff9900;">${playerStats.attack}</div>
+                        </div>
+                        <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                            <div style="font-size: 12px; color: #888;">Defense</div>
+                            <div style="font-size: 18px; color: #4A90E2;">${playerStats.defense}</div>
+                        </div>
+                        <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                            <div style="font-size: 12px; color: #888;">Speed</div>
+                            <div style="font-size: 18px; color: #FFD700;">${playerStats.speed}</div>
+                        </div>
+                    </div>
+                </div>
+        `;
+        
+        // Add party members
+        if (partyMembers && partyMembers.length > 0) {
+            partyMembers.forEach((member, index) => {
+                const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+                
+                menuHTML += `
+                    <div style="margin-bottom: 20px; padding: 15px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 12px; height: 12px; background: ${colorHex}; border-radius: 3px;"></div>
+                                    <div style="font-size: 20px; font-weight: bold; color: ${colorHex};">${member.name.toUpperCase()}</div>
+                                </div>
+                                <div style="font-size: 14px; color: #AAA; margin-top: 5px;">Level ${member.stats.level}</div>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                            <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                                <div style="font-size: 12px; color: #888;">Health</div>
+                                <div style="font-size: 18px; color: #00ff00;">${member.stats.health}</div>
+                            </div>
+                            <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                                <div style="font-size: 12px; color: #888;">Attack</div>
+                                <div style="font-size: 18px; color: #ff9900;">${member.stats.attack}</div>
+                            </div>
+                            <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                                <div style="font-size: 12px; color: #888;">Defense</div>
+                                <div style="font-size: 18px; color: #4A90E2;">${member.stats.defense}</div>
+                            </div>
+                            <div style="background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 5px;">
+                                <div style="font-size: 12px; color: #888;">Speed</div>
+                                <div style="font-size: 18px; color: #FFD700;">${member.stats.speed}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(0, 0, 0, 0.3); border-radius: 5px;">
+                            <div style="font-size: 12px; color: #888; margin-bottom: 5px;">Abilities</div>
+                            <div style="font-size: 14px; color: #FFD700;">${member.abilities ? member.abilities.join(', ') : 'None'}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            menuHTML += `
+                <div style="text-align: center; padding: 30px; color: #888; font-style: italic;">
+                    No party members yet. Recruit allies during your journey!
+                </div>
+            `;
+        }
+        
+        // Party size footer
+        const totalParty = 1 + partyMembers.length;
+        menuHTML += `
+                <div style="text-align: center; padding: 15px; background: rgba(255, 215, 0, 0.1); border-radius: 8px; margin-top: 20px;">
+                    <div style="font-size: 14px; color: #888; margin-bottom: 5px;">Party Size</div>
+                    <div style="font-size: 24px; color: #FFD700; font-weight: bold;">${totalParty} / 4</div>
+                </div>
+                
+                <div style="text-align: center; padding: 15px; margin-top: 15px;">
+                    <p style="color: #FFD700; font-size: 14px; margin: 0;">Press TAB or ESC to close</p>
+                    <button id="close-party-menu" style="background: #4A90E2; border: none; padding: 10px 30px; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px;">Close</button>
+                </div>
+            </div>
+        `;
+        
+        partyOverlay.innerHTML = menuHTML;
+        document.body.appendChild(partyOverlay);
+        
+        // Close function
+        const closeMenu = () => {
+            partyOverlay.remove();
+            document.removeEventListener('keydown', keydownHandler);
+        };
+        
+        // Keyboard handler
+        const keydownHandler = (event) => {
+            if (event.key === 'Tab' || event.key === 'Escape') {
+                event.preventDefault();
+                closeMenu();
+            }
+        };
+        document.addEventListener('keydown', keydownHandler);
+        
+        // Close button
+        const closeBtn = document.getElementById('close-party-menu');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeMenu);
+        }
+    }
 }
+
