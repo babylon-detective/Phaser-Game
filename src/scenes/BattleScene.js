@@ -115,17 +115,37 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     init(data) {
-        console.log('[BattleScene] Initializing with data:', data);
+        console.log('[BattleScene] ========== INIT ==========');
+        console.log('[BattleScene] Raw data received:', data);
+        console.log('[BattleScene] data.partyMembers:', data?.partyMembers);
+        console.log('[BattleScene] Is array?:', Array.isArray(data?.partyMembers));
+        console.log('[BattleScene] Length:', data?.partyMembers?.length);
         
         // Validate required data
         if (!data || !data.playerData || !data.npcDataArray) {
-            console.error('[BattleScene] Missing required data:', data);
+            console.error('[BattleScene] ❌ Missing required data:', data);
             return;
         }
 
         this.playerData = data.playerData;
         this.npcDataArray = data.npcDataArray;
         this.partyMembersData = data.partyMembers || [];
+        
+        console.log('[BattleScene] ==========================================');
+        console.log('[BattleScene] this.partyMembersData set to:', this.partyMembersData);
+        console.log('[BattleScene] Type:', typeof this.partyMembersData);
+        console.log('[BattleScene] Is Array:', Array.isArray(this.partyMembersData));
+        console.log('[BattleScene] Length:', this.partyMembersData.length);
+        
+        if (this.partyMembersData.length > 0) {
+            console.log('[BattleScene] ✅ Party members data present!');
+            this.partyMembersData.forEach((member, i) => {
+                console.log(`[BattleScene]   ${i + 1}. ${member.name} - Color: 0x${member.color?.toString(16)}`);
+            });
+        } else {
+            console.log('[BattleScene] ⚠️ NO PARTY MEMBERS DATA!');
+        }
+        console.log('[BattleScene] ==========================================');
         
         // Ensure npcDataArray is an array
         if (!Array.isArray(this.npcDataArray)) {
@@ -139,12 +159,7 @@ export default class BattleScene extends Phaser.Scene {
             y: this.playerData.y
         };
 
-        console.log('[BattleScene] Initialized with:', {
-            playerData: this.playerData,
-            npcDataArray: this.npcDataArray,
-            partyMembers: this.partyMembersData,
-            worldPosition: this.worldPosition
-        });
+        console.log('[BattleScene] Init complete. Party members to create:', this.partyMembersData.length);
     }
 
     preload() {
@@ -368,14 +383,20 @@ export default class BattleScene extends Phaser.Scene {
         this.cameras.main.setBounds(0, 0, this.cameras.main.width, this.cameras.main.height);
 
         // Create HUD using DOM-based UI
+        console.log('[BattleScene] Creating HUD Manager...');
         this.hudManager = new HUDManager(this);
         this.hudManager.create();
+        
+        console.log('[BattleScene] HUD created, now updating player stats...');
+        console.log('[BattleScene] Party characters at HUD creation:', this.partyCharacters.length);
         
         // Initialize HUD with player data from GameStateManager
         this.hudManager.updatePlayerStats();
         
         // Initialize enemy list in HUD
         this.updateEnemyHUD();
+        
+        console.log('[BattleScene] HUD initialization complete');
         
         // Initialize dialogue card system
         this.dialogueCard = new DialogueCard(this);
@@ -2241,13 +2262,13 @@ export default class BattleScene extends Phaser.Scene {
             this.tweens.add({
                 targets: this.player,
                 alpha: 0.3,
-                tint: 0xff0000,
+                fillColor: 0xff0000,
                 duration: 100,
                 yoyo: true,
                 repeat: 2,
                 onComplete: () => {
                     this.player.setAlpha(1);
-                    this.player.clearTint();
+                    // Rectangle uses fillColor, not tint (which is for sprites)
                 }
             });
             

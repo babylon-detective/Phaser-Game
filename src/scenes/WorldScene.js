@@ -56,6 +56,7 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     create() {
+        console.log('🎮 WorldScene create - VERSION 2.0 WITH PARTY SYSTEM');
         console.log('WorldScene create');
         
         // Create the tilemap

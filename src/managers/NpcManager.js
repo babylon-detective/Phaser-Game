@@ -490,20 +490,9 @@ export default class NpcManager {
         console.log(`[NpcManager] Starting battle with ${availableNPCs.length} NPCs:`, 
             availableNPCs.map(npc => `${npc.npcData.type} (ID: ${npc.npcData.id})`));
         
-        // Store player data for battle
-        const playerData = {
-            x: this.scene.playerManager.player.x,
-            y: this.scene.playerManager.player.y,
-            health: 100,
-            level: 1
-        };
-
-        // Start battle scene with all available NPCs
-        this.scene.scene.pause('WorldScene');
-        this.scene.scene.launch('BattleScene', { 
-            playerData: playerData,
-            npcDataArray: availableNPCs.map(npc => npc.npcData)
-        });
+        // Call WorldScene.startBattle() which handles party data
+        const npcDataArray = availableNPCs.map(npc => npc.npcData);
+        this.scene.startBattle(npcDataArray);
 
         // Set cooldown for all participating NPCs
         availableNPCs.forEach(npc => {
