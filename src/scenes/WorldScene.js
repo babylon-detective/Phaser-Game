@@ -801,7 +801,8 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     startBattle(npcDataArray) {
-        console.log('[WorldScene] Starting battle with NPC data:', npcDataArray);
+        console.log('[WorldScene] ========== STARTING BATTLE ==========');
+        console.log('[WorldScene] NPC data:', npcDataArray);
         
         if (!npcDataArray) {
             console.error('[WorldScene] No NPC data provided for battle');
@@ -824,7 +825,20 @@ export default class WorldScene extends Phaser.Scene {
         
         // Get party members for battle
         const partyMembers = this.partyManager ? this.partyManager.getPartyForBattle() : [];
-        console.log('[WorldScene] Launching battle with party:', partyMembers);
+        
+        console.log('[WorldScene] ========================================');
+        console.log('[WorldScene] Party Manager exists:', !!this.partyManager);
+        console.log('[WorldScene] Party members in manager:', this.partyManager ? this.partyManager.partyMembers.length : 0);
+        console.log('[WorldScene] Party data for battle:', partyMembers);
+        console.log('[WorldScene] Party member count:', partyMembers.length);
+        if (partyMembers.length > 0) {
+            partyMembers.forEach((member, i) => {
+                console.log(`[WorldScene]   Member ${i + 1}: ${member.name} (Lvl ${member.stats.level})`);
+            });
+        } else {
+            console.log('[WorldScene]   ⚠️ No party members to send to battle');
+        }
+        console.log('[WorldScene] ========================================');
         
         // Start battle scene with NPC state and party data
         this.scene.launch('BattleScene', {

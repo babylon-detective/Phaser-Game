@@ -155,18 +155,26 @@ export default class PartyManager {
 
     // Called from BattleScene when player chooses to recruit
     recruitFromBattle(npcId) {
+        console.log('[PartyManager] ========== RECRUIT FROM BATTLE ==========');
+        console.log('[PartyManager] Attempting to recruit NPC ID:', npcId);
+        console.log('[PartyManager] Current party members count:', this.partyMembers.length);
+        
         const npcData = this.recruitableNPCs.get(npcId);
         if (!npcData) {
-            console.error(`[PartyManager] Cannot find recruitable NPC: ${npcId}`);
+            console.error(`[PartyManager] ❌ Cannot find recruitable NPC: ${npcId}`);
             return { success: false, message: 'Character not found' };
         }
 
+        console.log('[PartyManager] Found NPC data:', npcData.name);
+        
         if (npcData.isRecruited) {
+            console.log('[PartyManager] ⚠️ NPC already recruited');
             return { success: false, message: `${npcData.name} is already in your party!` };
         }
 
         // Check if party is full
         if (this.partyMembers.length >= this.maxPartySize - 1) {
+            console.log('[PartyManager] ⚠️ Party is full');
             return { success: false, message: 'Your party is full!' };
         }
 
@@ -176,6 +184,8 @@ export default class PartyManager {
 
         // Add to party members
         this.partyMembers.push(npcData);
+        console.log('[PartyManager] ✅ Added to party members array');
+        console.log('[PartyManager] New party members count:', this.partyMembers.length);
 
         // Completely disable and hide the trigger zone (no more battles)
         if (npcData.triggerZone) {
@@ -307,15 +317,33 @@ export default class PartyManager {
     }
 
     getPartyForBattle() {
+        console.log('[PartyManager] ========== GET PARTY FOR BATTLE ==========');
+        console.log('[PartyManager] Party members array:', this.partyMembers);
+        console.log('[PartyManager] Party members count:', this.partyMembers.length);
+        
         // Return array of party members for battle scene
-        return this.partyMembers.map(member => ({
-            id: member.id,
-            name: member.name,
-            color: member.gameObject.fillColor,
-            indicatorColor: member.indicatorColor,
-            abilities: member.abilities,
-            stats: { ...member.stats }
-        }));
+        const battleData = this.partyMembers.map((member, index) => {
+            console.log(`[PartyManager] Processing member ${index + 1}:`, member.name);
+            console.log(`[PartyManager]   - ID: ${member.id}`);
+            console.log(`[PartyManager]   - GameObject exists: ${!!member.gameObject}`);
+            console.log(`[PartyManager]   - GameObject fillColor: 0x${member.gameObject?.fillColor?.toString(16)}`);
+            console.log(`[PartyManager]   - Indicator color: 0x${member.indicatorColor?.toString(16)}`);
+            console.log(`[PartyManager]   - Stats:`, member.stats);
+            
+            return {
+                id: member.id,
+                name: member.name,
+                color: member.gameObject.fillColor,
+                indicatorColor: member.indicatorColor,
+                abilities: member.abilities,
+                stats: { ...member.stats }
+            };
+        });
+        
+        console.log('[PartyManager] Battle data prepared:', battleData);
+        console.log('[PartyManager] =============================================');
+        
+        return battleData;
     }
     
     /**

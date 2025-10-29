@@ -1961,8 +1961,25 @@ export default class BattleScene extends Phaser.Scene {
         // Update range indicators
         this.updateRangeIndicators();
         
+        // Update party character indicators to follow their characters
+        this.updatePartyIndicators();
+        
         // Update NPC AI - ALL NPCs only move during player AP consumption or charging
         this.updateNPCMovement(delta);
+    }
+    
+    updatePartyIndicators() {
+        if (!this.partyCharacters || this.partyCharacters.length === 0) return;
+        
+        this.partyCharacters.forEach(character => {
+            if (character && character.active && character.memberData && character.memberData.indicator) {
+                // Position indicator above the character
+                character.memberData.indicator.setPosition(
+                    character.x,
+                    character.y - 40
+                );
+            }
+        });
     }
     
     updateNPCMovement(delta) {
