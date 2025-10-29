@@ -197,7 +197,12 @@ export default class HUDManager {
      * Shows player + all party members horizontally
      */
     updateBattlePartyStats() {
-        if (!this.elements.partyPanel) return;
+        console.log('[HUDManager] ========== UPDATING BATTLE PARTY STATS ==========');
+        
+        if (!this.elements.partyPanel) {
+            console.log('[HUDManager] ⚠️ No party panel element found!');
+            return;
+        }
         
         const playerStats = gameStateManager.getPlayerStats();
         const money = moneyManager.getMoney();
@@ -205,6 +210,10 @@ export default class HUDManager {
         // Get party members from BattleScene if available
         const battleScene = this.scene;
         const partyMembers = battleScene.partyCharacters || [];
+        
+        console.log(`[HUDManager] Battle Scene:`, battleScene.scene.key);
+        console.log(`[HUDManager] Party members count:`, partyMembers.length);
+        console.log(`[HUDManager] Party members:`, partyMembers);
         
         // Build HTML for player + party members
         let partyHTML = '';
@@ -267,6 +276,9 @@ export default class HUDManager {
         });
         
         this.elements.partyPanel.innerHTML = partyHTML;
+        
+        console.log(`[HUDManager] ✅ Battle party HUD updated with ${partyMembers.length} party members`);
+        console.log('[HUDManager] ===================================================');
     }
 
     /**

@@ -412,12 +412,15 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     createPartyCharacters(groundY) {
-        console.log('[BattleScene] Creating party characters');
+        console.log('[BattleScene] ========== CREATING PARTY CHARACTERS ==========');
+        console.log('[BattleScene] Party members data:', this.partyMembersData);
         
         if (!this.partyMembersData || this.partyMembersData.length === 0) {
             console.log('[BattleScene] No party members to create');
             return;
         }
+        
+        console.log(`[BattleScene] Creating ${this.partyMembersData.length} party characters...`);
         
         const playerX = this.cameras.main.width * 0.3;
         const spacing = 80; // Space between characters
@@ -465,10 +468,15 @@ export default class BattleScene extends Phaser.Scene {
             
             this.partyCharacters.push(character);
             
-            console.log(`[BattleScene] Created party character: ${memberData.name} at position ${index + 1}`);
+            console.log(`[BattleScene] ✅ Created party character: ${memberData.name} at (${characterX}, ${characterY})`);
+            console.log(`[BattleScene]    - Color: 0x${memberData.color.toString(16)}, Indicator: 0x${memberData.indicatorColor.toString(16)}`);
+            console.log(`[BattleScene]    - Stats: HP=${memberData.stats.health}, Atk=${memberData.stats.attack}, Lvl=${memberData.stats.level}`);
         });
         
-        console.log(`[BattleScene] Total party size: ${this.partyCharacters.length + 1} (Player + ${this.partyCharacters.length} members)`);
+        console.log(`[BattleScene] ========================================`);
+        console.log(`[BattleScene] ✅ Total party size: ${this.partyCharacters.length + 1} (Player + ${this.partyCharacters.length} members)`);
+        console.log(`[BattleScene] Party characters array:`, this.partyCharacters);
+        console.log(`[BattleScene] ========================================`);
     }
     
     createCheckerboardGround(groundY) {
