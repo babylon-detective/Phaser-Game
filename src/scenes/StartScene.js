@@ -7,6 +7,12 @@ export default class StartScene extends Phaser.Scene {
         super({ key: 'StartScene' });
         this.selectedIndex = 0;
         this.menuItems = [];
+        
+        // Gamepad support
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        this.lastStickUp = false;
+        this.lastStickDown = false;
     }
 
     preload() {
@@ -59,19 +65,25 @@ export default class StartScene extends Phaser.Scene {
     }
 
     update() {
-        // Handle menu navigation
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.up)) {
+        // Update gamepad
+        this.updateGamepad();
+        
+        // Handle menu navigation with keyboard or left stick
+        const navUp = Phaser.Input.Keyboard.JustDown(this.wasdKeys.up) || this.isGamepadStickUp();
+        const navDown = Phaser.Input.Keyboard.JustDown(this.wasdKeys.down) || this.isGamepadStickDown();
+        
+        if (navUp) {
             this.selectedIndex = (this.selectedIndex - 1 + this.menuItems.length) % this.menuItems.length;
             this.updateSelection();
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.down)) {
+        if (navDown) {
             this.selectedIndex = (this.selectedIndex + 1) % this.menuItems.length;
             this.updateSelection();
         }
 
-        // Handle selection
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.enter)) {
+        // Handle selection with Enter key or Start button (button 9)
+        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.enter) || this.isGamepadButtonJustPressed(9)) {
             this.selectMenuItem(this.selectedIndex);
         }
     }
@@ -173,5 +185,68 @@ export default class StartScene extends Phaser.Scene {
             playerData: this.playerManager.getPlayerData(),
             npcData: npcData // Pass the npcData including triggerRadius
         });
+    }
+    
+    /**
+     * Gamepad helper methods
+     */
+    updateGamepad() {
+        if (window.getGlobalGamepad) {
+            const pad = window.getGlobalGamepad();
+            if (pad && pad.connected) {
+                this.gamepad = pad;
+            } else if (this.gamepad && !this.gamepad.connected) {
+                this.gamepad = null;
+            }
+        } else {
+            try {
+                const gamepads = navigator.getGamepads();
+                if (gamepads && gamepads.length > 0) {
+                    for (let i = 0; i < gamepads.length; i++) {
+                        const pad = gamepads[i];
+                        if (pad && pad.connected) {
+                            this.gamepad = pad;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+    }
+    
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        
+        // Ensure gamepadButtonStates is initialized
+        if (!this.gamepadButtonStates) {
+            this.gamepadButtonStates = {};
+        }
+        
+        const button = this.gamepad.buttons[buttonIndex];
+        const isPressed = button && (button.pressed || button.value > 0.5);
+        const key = `button_${buttonIndex}`;
+        const wasPressed = this.gamepadButtonStates[key] || false;
+        this.gamepadButtonStates[key] = isPressed;
+        return isPressed && !wasPressed;
+    }
+    
+    isGamepadStickUp() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isUp = axisY < -0.5;
+        const justPressed = isUp && !this.lastStickUp;
+        this.lastStickUp = isUp;
+        return justPressed;
+    }
+    
+    isGamepadStickDown() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isDown = axisY > 0.5;
+        const justPressed = isDown && !this.lastStickDown;
+        this.lastStickDown = isDown;
+        return justPressed;
     }
 }

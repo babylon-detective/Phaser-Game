@@ -11,6 +11,17 @@ export default class MenuScene extends Phaser.Scene {
         this.timerInterval = null;
         this.selectedTabIndex = 0;
         this.tabs = [];
+        
+        // Gamepad support
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        this.lastStickLeft = false;
+        this.lastStickRight = false;
+        this.lastStickUp = false;
+        this.lastStickDown = false;
+        
+        // Pause state
+        this.isPaused = false;
     }
 
     init(data) {
@@ -50,9 +61,9 @@ export default class MenuScene extends Phaser.Scene {
             right: Phaser.Input.Keyboard.KeyCodes.D
         });
         
-        // Add ] key for selection/activation (using keyCode 221)
-        this.actionKey = this.input.keyboard.addKey(221); // ] key (CLOSE_BRACKET)
-        console.log('[MenuScene] Action key set up:', this.actionKey);
+        // Add U key for confirmation (changed from ])
+        this.actionKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.U);
+        console.log('[MenuScene] Action key set up (U):', this.actionKey);
         
         // Add general keydown listener for debugging
         this.input.keyboard.on('keydown', (event) => {
@@ -71,30 +82,64 @@ export default class MenuScene extends Phaser.Scene {
             console.log('[MenuScene] Closing menu with ESC');
             this.closeMenu();
         });
+        
+        // Add Enter key for pausing
+        const enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+        enterKey.on('down', () => {
+            this.toggleGamePause();
+        });
 
         // Start timer update interval
         this.startTimerUpdate();
     }
     
     update() {
-        // Handle tab navigation with WASD
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.up)) {
+        // Update gamepad
+        this.updateGamepad();
+        
+        // Check for pause with Start button (button 9)
+        if (this.isGamepadButtonJustPressed(9)) {
+            this.toggleGamePause();
+            return;
+        }
+        
+        // If paused, don't process any other input
+        if (this.isPaused) {
+            return;
+        }
+        
+        // Check for menu close with Select button (button 8) or B button (button 1)
+        if (this.isGamepadButtonJustPressed(8) || this.isGamepadButtonJustPressed(1)) {
+            console.log('[MenuScene] Select/B button pressed, closing menu');
+            this.closeMenu();
+            return;
+        }
+        
+        // Handle tab navigation with WASD or left stick
+        const navLeft = Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || 
+                        Phaser.Input.Keyboard.JustDown(this.wasdKeys.up) ||
+                        this.isGamepadStickLeft() || this.isGamepadStickUp();
+        const navRight = Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || 
+                         Phaser.Input.Keyboard.JustDown(this.wasdKeys.down) ||
+                         this.isGamepadStickRight() || this.isGamepadStickDown();
+        
+        if (navLeft) {
             console.log('[MenuScene] Navigating to previous tab');
             this.selectedTabIndex = (this.selectedTabIndex - 1 + this.tabs.length) % this.tabs.length;
             console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
             this.updateTabSelection();
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.down)) {
+        if (navRight) {
             console.log('[MenuScene] Navigating to next tab');
             this.selectedTabIndex = (this.selectedTabIndex + 1) % this.tabs.length;
             console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
             this.updateTabSelection();
         }
         
-        // Handle tab activation with ] key
-        if (Phaser.Input.Keyboard.JustDown(this.actionKey)) {
-            console.log('[MenuScene] ] key pressed!');
+        // Handle tab activation with U key or A button
+        if (Phaser.Input.Keyboard.JustDown(this.actionKey) || this.isGamepadButtonJustPressed(0)) {
+            console.log('[MenuScene] U/A button pressed!');
             console.log('[MenuScene] Current tab:', this.tabs[this.selectedTabIndex]);
             this.activateCurrentTab();
         }
@@ -254,7 +299,7 @@ export default class MenuScene extends Phaser.Scene {
         `;
         this.controlsHint.innerHTML = `
             <span style="color: #FFD700;">WASD</span> Navigate • 
-            <span style="color: #FFD700;">]</span> Select • 
+            <span style="color: #FFD700;">U</span> Select • 
             <span style="color: #FFD700;">/</span> or <span style="color: #FFD700;">ESC</span> Close
         `;
         this.menuContainer.appendChild(this.controlsHint);
@@ -627,7 +672,7 @@ export default class MenuScene extends Phaser.Scene {
             <div style="margin-bottom: 20px; color: #AAA; line-height: 1.6;">
                 <p style="margin-bottom: 12px;">You are standing on a <span style="color: #00FFFF;">Save Point</span>.</p>
                 <p style="margin-bottom: 12px;">Your current position and progress will be saved.</p>
-                <p style="color: #FFD700;">Press <span style="font-weight: bold; font-size: 16px;">]</span> to save your game.</p>
+                <p style="color: #FFD700;">Press <span style="font-weight: bold; font-size: 16px;">U</span> to save your game.</p>
             </div>
             
             <div style="padding: 15px; background: rgba(0, 255, 255, 0.1); border: 1px solid #00FFFF; border-radius: 8px; margin-bottom: 15px;">
@@ -748,6 +793,190 @@ export default class MenuScene extends Phaser.Scene {
         // Stop this scene
         this.scene.stop();
     }
+    
+    /**
+     * Gamepad helper methods
+     */
+    updateGamepad() {
+        if (window.getGlobalGamepad) {
+            const pad = window.getGlobalGamepad();
+            if (pad && pad.connected) {
+                this.gamepad = pad;
+            } else if (this.gamepad && !this.gamepad.connected) {
+                this.gamepad = null;
+            }
+        } else {
+            try {
+                const gamepads = navigator.getGamepads();
+                if (gamepads && gamepads.length > 0) {
+                    for (let i = 0; i < gamepads.length; i++) {
+                        const pad = gamepads[i];
+                        if (pad && pad.connected) {
+                            this.gamepad = pad;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+    }
+    
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        
+        // Ensure gamepadButtonStates is initialized
+        if (!this.gamepadButtonStates) {
+            this.gamepadButtonStates = {};
+        }
+        
+        const button = this.gamepad.buttons[buttonIndex];
+        const isPressed = button && (button.pressed || button.value > 0.5);
+        const key = `button_${buttonIndex}`;
+        const wasPressed = this.gamepadButtonStates[key] || false;
+        this.gamepadButtonStates[key] = isPressed;
+        return isPressed && !wasPressed;
+    }
+    
+    isGamepadStickLeft() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        const isLeft = axisX < -0.5;
+        const justPressed = isLeft && !this.lastStickLeft;
+        this.lastStickLeft = isLeft;
+        return justPressed;
+    }
+    
+    isGamepadStickRight() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        const isRight = axisX > 0.5;
+        const justPressed = isRight && !this.lastStickRight;
+        this.lastStickRight = isRight;
+        return justPressed;
+    }
+    
+    isGamepadStickUp() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isUp = axisY < -0.5;
+        const justPressed = isUp && !this.lastStickUp;
+        this.lastStickUp = isUp;
+        return justPressed;
+    }
+    
+    isGamepadStickDown() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isDown = axisY > 0.5;
+        const justPressed = isDown && !this.lastStickDown;
+        this.lastStickDown = isDown;
+        return justPressed;
+    }
+    
+    toggleGamePause() {
+        this.isPaused = !this.isPaused;
+        
+        if (this.isPaused) {
+            console.log('[MenuScene] ⏸️ GAME PAUSED (Enter/Start)');
+            
+            // Pause the game timer
+            gameStateManager.pauseTimer();
+            
+            // Pause the scene
+            this.scene.pause();
+            
+            // Create pause overlay
+            this.createPauseOverlay();
+        } else {
+            console.log('[MenuScene] ▶️ GAME RESUMED (Enter/Start)');
+            
+            // Resume the game timer
+            gameStateManager.resumeTimer();
+            
+            // Remove pause overlay
+            this.removePauseOverlay();
+            
+            // Resume the scene
+            this.scene.resume();
+        }
+    }
+    
+    createPauseOverlay() {
+        // Create pause overlay in DOM
+        this.pauseOverlay = document.createElement('div');
+        this.pauseOverlay.id = 'menu-pause-overlay';
+        this.pauseOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        this.pauseOverlay.innerHTML = `
+            <div style="text-align: center; color: white;">
+                <div style="font-size: 72px; font-weight: bold; margin-bottom: 30px; color: #FFD700;">
+                    ⏸ PAUSED
+                </div>
+                <div style="font-size: 18px; color: #AAA; margin-bottom: 10px;">
+                    Menu and game time paused
+                </div>
+                <div style="font-size: 18px; color: #AAA;">
+                    Press <span style="color: #FFD700; font-weight: bold;">ENTER</span> or <span style="color: #FFD700; font-weight: bold;">START</span> to resume
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(this.pauseOverlay);
+        
+        // Add DOM keyboard listener for unpause (works even when Phaser scene is paused)
+        this.pauseKeyListener = (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                this.toggleGamePause();
+            }
+        };
+        document.addEventListener('keydown', this.pauseKeyListener);
+        
+        // Poll gamepad for Start button while paused
+        this.pauseGamepadInterval = setInterval(() => {
+            const pad = window.getGlobalGamepad?.();
+            if (pad && pad.buttons && pad.buttons[9] && pad.buttons[9].pressed) {
+                // Check if this is a new press (not held from before pause)
+                if (!this.startButtonWasPressed) {
+                    this.startButtonWasPressed = true;
+                    this.toggleGamePause();
+                }
+            } else {
+                this.startButtonWasPressed = false;
+            }
+        }, 50); // Poll every 50ms
+    }
+    
+    removePauseOverlay() {
+        if (this.pauseOverlay) {
+            this.pauseOverlay.remove();
+            this.pauseOverlay = null;
+        }
+        
+        if (this.pauseKeyListener) {
+            document.removeEventListener('keydown', this.pauseKeyListener);
+            this.pauseKeyListener = null;
+        }
+        
+        if (this.pauseGamepadInterval) {
+            clearInterval(this.pauseGamepadInterval);
+            this.pauseGamepadInterval = null;
+        }
+    }
 
     shutdown() {
         console.log('[MenuScene] Shutting down');
@@ -757,6 +986,9 @@ export default class MenuScene extends Phaser.Scene {
             clearInterval(this.timerInterval);
             this.timerInterval = null;
         }
+        
+        // Remove pause overlay if exists
+        this.removePauseOverlay();
 
         // Show the actual player sprite in WorldScene again (safety check)
         if (this.worldScene && this.worldScene.playerManager && this.worldScene.playerManager.player) {

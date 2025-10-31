@@ -789,8 +789,8 @@ class DialogueCard {
         // Create continue prompt
         const continuePrompt = isLastParagraph ? 
             (this.dialogueType === 'warning' || this.dialogueType === 'ultimatum' ? 
-                'Press ] to acknowledge' : 'Press ] to continue') : 
-            'Press ] to continue';
+                'Press U to acknowledge' : 'Press U to continue') : 
+            'Press U to continue';
         
         const htmlContent = `
             <div style="font-weight: bold; color: #FFD700; margin-bottom: 10px;">
@@ -985,6 +985,12 @@ class DialogueCard {
      * Setup multi-paragraph input handling
      */
     setupMultiParagraphInput() {
+        // Setup gamepad button state tracking
+        this.gamepadButtonStates = {};
+        
+        // Start gamepad polling
+        this.startGamepadPolling();
+        
         this.keyboardHandler = (event) => {
             console.log('[DialogueCard] Multi-paragraph key pressed:', event.key, 'isActive:', this.isActive);
             
@@ -1002,7 +1008,8 @@ class DialogueCard {
             // If in player choice mode but no choices, just close on any key
             if (this.isPlayerChoiceMode && this.choices.length === 0) {
                 switch (event.key) {
-                    case ']':
+                    case 'u':
+                    case 'U':
                     case 'Enter':
                     case ' ':
                     case 'Escape':
@@ -1044,7 +1051,8 @@ class DialogueCard {
                         break;
                     
                     // Selection controls
-                    case ']': // Right bracket for selection
+                    case 'u':
+                    case 'U':
                     case 'Enter':
                     case ' ':
                         event.preventDefault();
@@ -1063,7 +1071,8 @@ class DialogueCard {
                 // Handle text progression
                 switch (event.key) {
                     // Continue to next paragraph or finish dialogue
-                    case ']': // Right bracket for confirmation
+                    case 'u':
+                    case 'U':
                     case 'Enter':
                     case ' ':
                         event.preventDefault();
@@ -1080,6 +1089,88 @@ class DialogueCard {
         };
         
         document.addEventListener('keydown', this.keyboardHandler);
+    }
+    
+    /**
+     * Start gamepad polling for dialogue input
+     */
+    startGamepadPolling() {
+        this.gamepadPollInterval = setInterval(() => {
+            if (!this.isActive) return;
+            
+            const gamepad = window.getGlobalGamepad?.();
+            if (!gamepad || !gamepad.buttons) return;
+            
+            const showingChoices = this.isPlayerChoiceMode && this.choices.length > 0;
+            
+            // Check A button (button 0) for confirmation/selection
+            const aButtonPressed = gamepad.buttons[0] && gamepad.buttons[0].pressed;
+            const aButtonJustPressed = aButtonPressed && !this.gamepadButtonStates.aButton;
+            this.gamepadButtonStates.aButton = aButtonPressed;
+            
+            if (aButtonJustPressed) {
+                if (this.isPlayerChoiceMode && this.choices.length === 0) {
+                    // No choices, just close
+                    this.hide();
+                } else if (showingChoices) {
+                    // Select current choice
+                    if (this.choices[this.selectedChoiceIndex]) {
+                        this.selectChoice(this.choices[this.selectedChoiceIndex]);
+                    }
+                } else {
+                    // Continue to next paragraph
+                    this.nextParagraph();
+                }
+            }
+            
+            // Check B button (button 1) for cancel/close
+            const bButtonPressed = gamepad.buttons[1] && gamepad.buttons[1].pressed;
+            const bButtonJustPressed = bButtonPressed && !this.gamepadButtonStates.bButton;
+            this.gamepadButtonStates.bButton = bButtonPressed;
+            
+            if (bButtonJustPressed) {
+                this.hide();
+            }
+            
+            // Check left stick for choice navigation (only if showing choices)
+            if (showingChoices) {
+                const axisX = gamepad.axes[0] || 0;
+                const axisY = gamepad.axes[1] || 0;
+                const deadzone = 0.5;
+                
+                const stickLeft = axisX < -deadzone;
+                const stickRight = axisX > deadzone;
+                const stickUp = axisY < -deadzone;
+                const stickDown = axisY > deadzone;
+                
+                const stickLeftJustPressed = stickLeft && !this.gamepadButtonStates.stickLeft;
+                const stickRightJustPressed = stickRight && !this.gamepadButtonStates.stickRight;
+                const stickUpJustPressed = stickUp && !this.gamepadButtonStates.stickUp;
+                const stickDownJustPressed = stickDown && !this.gamepadButtonStates.stickDown;
+                
+                this.gamepadButtonStates.stickLeft = stickLeft;
+                this.gamepadButtonStates.stickRight = stickRight;
+                this.gamepadButtonStates.stickUp = stickUp;
+                this.gamepadButtonStates.stickDown = stickDown;
+                
+                if (stickLeftJustPressed || stickUpJustPressed) {
+                    this.navigateChoices(-1);
+                }
+                if (stickRightJustPressed || stickDownJustPressed) {
+                    this.navigateChoices(1);
+                }
+            }
+        }, 50); // Poll every 50ms
+    }
+    
+    /**
+     * Stop gamepad polling
+     */
+    stopGamepadPolling() {
+        if (this.gamepadPollInterval) {
+            clearInterval(this.gamepadPollInterval);
+            this.gamepadPollInterval = null;
+        }
     }
     
     /**
@@ -1143,9 +1234,10 @@ class DialogueCard {
                     break;
                 
                 // Selection controls
+                case 'u':
+                case 'U':
                 case 'Enter':
                 case ' ':
-                case ']': // Right bracket for selection
                     event.preventDefault();
                     if (this.choices[this.selectedChoiceIndex] && this.choices[this.selectedChoiceIndex].available) {
                         this.selectChoice(this.choices[this.selectedChoiceIndex]);
@@ -1156,14 +1248,6 @@ class DialogueCard {
                 case 'Escape':
                     event.preventDefault();
                     this.hide();
-                    break;
-                
-                // Additional game controls
-                case '[': // Left bracket for alternative selection
-                    event.preventDefault();
-                    if (this.choices[this.selectedChoiceIndex] && this.choices[this.selectedChoiceIndex].available) {
-                        this.selectChoice(this.choices[this.selectedChoiceIndex]);
-                    }
                     break;
                 
                 // Number keys for quick selection (1-9)
@@ -1294,6 +1378,9 @@ class DialogueCard {
             document.removeEventListener('keydown', this.keyboardHandler);
             this.keyboardHandler = null;
         }
+        
+        // Stop gamepad polling
+        this.stopGamepadPolling();
         
         // Reset dialogue state
         this.isActive = false;

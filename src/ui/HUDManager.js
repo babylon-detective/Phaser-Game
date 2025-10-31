@@ -11,6 +11,8 @@ export default class HUDManager {
         this.container = null;
         this.elements = {};
         this.isVisible = true;
+        this.lastInputMethod = 'keyboard'; // 'keyboard' or 'gamepad'
+        this.inputCheckInterval = null;
     }
 
     /**
@@ -35,6 +37,9 @@ export default class HUDManager {
             this.createBattleHUD();
         }
 
+        // Start monitoring input method for dynamic control display
+        this.startInputMonitoring();
+
         console.log('[HUDManager] HUD created for scene:', sceneKey);
     }
 
@@ -57,14 +62,7 @@ export default class HUDManager {
 
         // Controls Help Panel
         this.elements.controlsPanel = this.createPanel('controls-panel', 'bottom-left');
-        this.elements.controlsPanel.innerHTML = `
-            <div class="hud-title">Controls</div>
-            <div class="control-row"><kbd>WASD</kbd> Move</div>
-            <div class="control-row"><kbd>Shift</kbd> Sprint (Hold & Release)</div>
-            <div class="control-row"><kbd>TAB</kbd> Party Status</div>
-            <div class="control-row"><kbd>/</kbd> Menu (time continues)</div>
-            <div class="control-row"><kbd>Enter</kbd> Pause Game</div>
-        `;
+        this.updateControlsDisplay('keyboard'); // Initial display
 
         // Mini Status Display (top-right)
         this.elements.statusPanel = this.createPanel('status-panel', 'top-right');
@@ -180,16 +178,8 @@ export default class HUDManager {
         `;
 
         // Battle Controls (bottom-left to match WorldScene)
-        this.elements.battleControlsPanel = this.createPanel('battle-controls-panel', 'bottom-left');
-        this.elements.battleControlsPanel.innerHTML = `
-            <div class="hud-title">Controls</div>
-            <div class="control-row"><kbd>0</kbd> Group Movement | <kbd>1-4</kbd> Individual Control</div>
-            <div class="control-row"><kbd>WASD</kbd> Move | <kbd>Shift</kbd> Dash</div>
-            <div class="control-row"><kbd>U/I/O/P</kbd> Character Abilities</div>
-            <div class="control-row"><kbd>=</kbd> Charge AP</div>
-            <div class="control-row"><kbd>/</kbd> Battle Menu (Talk/Items/Skills)</div>
-            <div class="control-row"><kbd>ESC</kbd> Escape Battle</div>
-        `;
+        this.elements.controlsPanel = this.createPanel('battle-controls-panel', 'bottom-left');
+        this.updateControlsDisplay('keyboard'); // Initial display
     }
     
     /**
@@ -238,7 +228,6 @@ export default class HUDManager {
                     <span class="stat-label" style="margin-left: 10px;">💰</span>
                     <span class="stat-value" id="battle-player-money" style="color: #FFD700;">${money}</span>
                 </div>
-                <div style="font-size: 10px; color: #888; margin-top: 3px; text-align: center;">Press <kbd>1</kbd></div>
             </div>
         `;
         
@@ -270,7 +259,6 @@ export default class HUDManager {
                         <span class="stat-label" style="margin-left: 10px;">Atk:</span>
                         <span class="stat-value">${memberData.stats.attack}</span>
                     </div>
-                    <div style="font-size: 10px; color: #888; margin-top: 3px; text-align: center;">Press <kbd>${keyNumber}</kbd> | <kbd>${'UIOP'[index]}</kbd> ability</div>
                 </div>
             `;
         });
@@ -492,10 +480,116 @@ export default class HUDManager {
     }
 
     /**
+     * Update controls display based on input method
+     * @param {string} inputMethod - 'keyboard' or 'gamepad'
+     */
+    updateControlsDisplay(inputMethod) {
+        if (!this.elements.controlsPanel) return;
+        
+        this.lastInputMethod = inputMethod;
+        const sceneKey = this.scene.scene.key;
+        
+        if (sceneKey === 'WorldScene') {
+            if (inputMethod === 'keyboard') {
+                this.elements.controlsPanel.innerHTML = `
+                    <div class="hud-title">Controls (Keyboard)</div>
+                    <div class="control-row"><kbd>WASD</kbd> Move</div>
+                    <div class="control-row"><kbd>Shift</kbd> Sprint (Hold & Release)</div>
+                    <div class="control-row"><kbd>Q</kbd>/<kbd>E</kbd> Rotate Leader</div>
+                    <div class="control-row"><kbd>/</kbd> Menu</div>
+                    <div class="control-row"><kbd>M</kbd> Map</div>
+                    <div class="control-row"><kbd>Enter</kbd> Pause</div>
+                `;
+            } else {
+                this.elements.controlsPanel.innerHTML = `
+                    <div class="hud-title">Controls (Gamepad)</div>
+                    <div class="control-row">🕹️ <span>Left Stick</span> Move</div>
+                    <div class="control-row">🎮 <span>L1</span> Sprint</div>
+                    <div class="control-row">🎮 <span>D-pad L/R</span> Rotate Leader</div>
+                    <div class="control-row">🎮 <span>Select</span> Menu</div>
+                    <div class="control-row">🎮 <span>R2</span> Map</div>
+                    <div class="control-row">🎮 <span>Start</span> Pause</div>
+                `;
+            }
+        } else if (sceneKey === 'BattleScene') {
+            if (inputMethod === 'keyboard') {
+                this.elements.controlsPanel.innerHTML = `
+                    <div class="hud-title">Battle Controls (Keyboard)</div>
+                    <div class="control-row"><kbd>WASD</kbd> Move</div>
+                    <div class="control-row"><kbd>Shift</kbd> Dash</div>
+                    <div class="control-row"><kbd>U/I/O/P</kbd> Attack/Abilities</div>
+                    <div class="control-row"><kbd>Q</kbd>/<kbd>E</kbd> Rotate Character</div>
+                    <div class="control-row"><kbd>0</kbd> Group Mode</div>
+                    <div class="control-row"><kbd>=</kbd> Charge AP</div>
+                    <div class="control-row"><kbd>/</kbd> Battle Menu</div>
+                    <div class="control-row"><kbd>ESC</kbd> Retreat</div>
+                    <div class="control-row"><kbd>Enter</kbd> Pause</div>
+                `;
+            } else {
+                this.elements.controlsPanel.innerHTML = `
+                    <div class="hud-title">Battle Controls (Gamepad)</div>
+                    <div class="control-row">🕹️ <span>Left Stick</span> Move</div>
+                    <div class="control-row">🎮 <span>L1</span> Dash</div>
+                    <div class="control-row">🎮 <span>A/B/X/Y</span> Attack/Abilities</div>
+                    <div class="control-row">🎮 <span>D-pad L/R</span> Rotate Character</div>
+                    <div class="control-row">🎮 <span>D-pad Up</span> Group Mode</div>
+                    <div class="control-row">🎮 <span>R2</span> Charge AP</div>
+                    <div class="control-row">🎮 <span>Select</span> Battle Menu</div>
+                    <div class="control-row">🎮 <span>L2</span> Retreat</div>
+                    <div class="control-row">🎮 <span>Start</span> Pause</div>
+                `;
+            }
+        }
+    }
+    
+    /**
+     * Start monitoring input method
+     */
+    startInputMonitoring() {
+        // Check for input method changes every second
+        this.inputCheckInterval = setInterval(() => {
+            const gamepad = window.getGlobalGamepad ? window.getGlobalGamepad() : null;
+            
+            // If gamepad has recent input, switch to gamepad display
+            if (gamepad && gamepad.buttons) {
+                const anyButtonPressed = gamepad.buttons.some(btn => btn && (btn.pressed || btn.value > 0.1));
+                const anyAxisMoved = gamepad.axes && gamepad.axes.some(axis => Math.abs(axis) > 0.3);
+                
+                if ((anyButtonPressed || anyAxisMoved) && this.lastInputMethod !== 'gamepad') {
+                    this.updateControlsDisplay('gamepad');
+                }
+            }
+            
+            // Check for keyboard input (if scene has input manager)
+            if (this.scene.input && this.scene.input.keyboard) {
+                const keys = this.scene.input.keyboard.keys;
+                if (keys && Object.keys(keys).length > 0) {
+                    const anyKeyDown = Object.values(keys).some(key => key && key.isDown);
+                    if (anyKeyDown && this.lastInputMethod !== 'keyboard') {
+                        this.updateControlsDisplay('keyboard');
+                    }
+                }
+            }
+        }, 1000);
+    }
+    
+    /**
+     * Stop monitoring input method
+     */
+    stopInputMonitoring() {
+        if (this.inputCheckInterval) {
+            clearInterval(this.inputCheckInterval);
+            this.inputCheckInterval = null;
+        }
+    }
+
+    /**
      * Clean up and remove all HUD elements
      */
     destroy() {
         console.log('[HUDManager] Destroying HUD');
+        
+        this.stopInputMonitoring();
         
         if (this.container) {
             this.container.remove();

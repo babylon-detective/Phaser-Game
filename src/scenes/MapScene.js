@@ -8,6 +8,11 @@ export default class MapScene extends Phaser.Scene {
         this.isTransitioning = false;
         this.transitionTimer = null;
         this.playerBlinkTween = null;
+        
+        // Gamepad support
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        
         // Simple color palette for different tile types
         this.tilePalette = {
             'TX Sea': 0x0066cc,        // Blue
@@ -574,7 +579,39 @@ export default class MapScene extends Phaser.Scene {
     update() {
         // Don't update during transition
         if (this.isTransitioning) return;
-
-        // ... rest of update code ...
+        
+        // Update gamepad
+        this.updateGamepad();
+        
+        // Check for R2 button to close map
+        if (this.isGamepadButtonJustPressed(7)) {
+            console.log('[MapScene] R2 button pressed, closing map');
+            this.scene.resume('WorldScene');
+            this.scene.stop();
+            return;
+        }
+    }
+    
+    // Gamepad helper methods
+    updateGamepad() {
+        if (typeof window !== 'undefined' && window.getGlobalGamepad) {
+            this.gamepad = window.getGlobalGamepad();
+        }
+    }
+    
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad) return false;
+        
+        // Ensure gamepadButtonStates is initialized
+        if (!this.gamepadButtonStates) {
+            this.gamepadButtonStates = {};
+        }
+        
+        const currentState = this.gamepad.buttons && this.gamepad.buttons[buttonIndex]?.pressed;
+        const previousState = this.gamepadButtonStates[buttonIndex] || false;
+        
+        this.gamepadButtonStates[buttonIndex] = currentState;
+        
+        return currentState && !previousState;
     }
 }

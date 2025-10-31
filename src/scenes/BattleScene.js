@@ -374,9 +374,14 @@ export default class BattleScene extends Phaser.Scene {
         // Initialize party system
         this.initializeParty();
         
-        // Reset AP to full at start of battle (HP tracked in DOM HUD)
+        // Reset AP to full at start of battle
         this.resetAP();
-        this.currentHP = this.maxHP; // Reset HP silently
+        
+        // Initialize HP from gameStateManager (preserve health between battles)
+        const playerStats = gameStateManager.getPlayerStats();
+        this.currentHP = playerStats.health;
+        this.maxHP = playerStats.maxHealth;
+        console.log(`[BattleScene] Initialized player health: ${this.currentHP}/${this.maxHP}`);
 
         // Set up camera
         this.cameras.main.startFollow(this.player);
@@ -616,19 +621,19 @@ export default class BattleScene extends Phaser.Scene {
             right: 'D'
         });
         
-        // Character switching controls (old Q/E system - can be removed if not needed)
-        this.characterSwitchKeys = this.input.keyboard.addKeys({
-            switchLeft: 'Q',
-            switchRight: 'E'
-        });
+        // Initialize gamepad reference
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        this.lastGamepadCheck = 0;
         
-        // NEW: Number key controls for direct character selection
-        this.numberKeys = this.input.keyboard.addKeys({
-            key0: 'ZERO',   // Group movement mode
-            key1: 'ONE',    // Control player
-            key2: 'TWO',    // Control party member 1
-            key3: 'THREE',  // Control party member 2
-            key4: 'FOUR'    // Control party member 3
+        // Pause state
+        this.isPaused = false;
+        
+        // Character switching controls with Q/E rotation
+        this.characterSwitchKeys = this.input.keyboard.addKeys({
+            rotateLeft: 'Q',   // Cycle to previous character
+            rotateRight: 'E',  // Cycle to next character
+            groupMode: 'ZERO'  // Whole team mode
         });
         
         // Face button controls for character abilities
@@ -644,7 +649,7 @@ export default class BattleScene extends Phaser.Scene {
         // Alternative key binding for testing
         this.chargeAPKeyAlt = this.input.keyboard.addKey(187); // = key code
 
-        // Note: [ and ] keys reserved for confirmation/selection in menus
+        // Note: U key (and A gamepad button) used for confirmation/selection in menus
         // Attacks are now handled by U/I/O/P face buttons only
 
         // Add / key handler for BattleMenuScene
@@ -652,6 +657,12 @@ export default class BattleScene extends Phaser.Scene {
         this.slashKey.on('down', () => {
             console.log('[BattleScene] Opening Battle Menu with /');
             this.openBattleMenu();
+        });
+
+        // Add Enter key for pausing
+        const enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+        enterKey.on('down', () => {
+            this.toggleGamePause();
         });
 
         // Enable input
@@ -745,6 +756,24 @@ export default class BattleScene extends Phaser.Scene {
         this.isEnemySelectionMode = true;
         this.selectedEnemyIndex = 0;
         this.enemyHighlights = [];
+        
+        // IMPORTANT: Prime gamepad button states with current button state
+        // This prevents buttons that are currently held down from being detected as "just pressed"
+        this.updateGamepad();
+        if (this.gamepad && this.gamepad.buttons) {
+            this.gamepadButtonStates = {};
+            // Set all currently pressed buttons to true so they won't trigger "just pressed"
+            for (let i = 0; i < this.gamepad.buttons.length; i++) {
+                const button = this.gamepad.buttons[i];
+                const isPressed = button && (button.pressed || button.value > 0.5);
+                this.gamepadButtonStates[`button_${i}`] = isPressed;
+            }
+            console.log('[BattleScene] Primed gamepad button states to prevent held button carryover:', this.gamepadButtonStates);
+        } else {
+            this.gamepadButtonStates = {};
+        }
+        this.lastStickLeftState = false;
+        this.lastStickRightState = false;
         
         // Create highlights for all enemies
         this.enemies.forEach((enemy, index) => {
@@ -855,7 +884,7 @@ export default class BattleScene extends Phaser.Scene {
                 </div>
             ` : ''}
             <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
-                A/D - Switch Enemy | ] - Confirm | ESC - Cancel
+                A/D or Left Stick - Switch Enemy | U/A - Confirm | ESC/B - Cancel
             </div>
         `;
         
@@ -891,7 +920,7 @@ export default class BattleScene extends Phaser.Scene {
                     </div>
                 ` : ''}
                 <div style="font-size: 16px; color: #FFD700; font-weight: bold; margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255, 215, 0, 0.3);">
-                    A/D - Switch Enemy | ] - Confirm | ESC - Cancel
+                    A/D or Left Stick - Switch Enemy | U/A - Confirm | ESC/B - Cancel
                 </div>
             `;
         }
@@ -904,7 +933,7 @@ export default class BattleScene extends Phaser.Scene {
         this.enemySelectionKeys = {
             a: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
             d: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-            confirm: this.input.keyboard.addKey(221), // ] key
+            confirm: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.U), // U key (changed from ])
             cancel: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
         };
         
@@ -934,9 +963,23 @@ export default class BattleScene extends Phaser.Scene {
         
         const keys = this.enemySelectionKeys;
         
-        // Navigate left (A)
-        if (Phaser.Input.Keyboard.JustDown(keys.a)) {
-            console.log('[BattleScene] A key pressed - navigating left');
+        // Check for gamepad stick navigation
+        const gamepadStickLeft = this.isGamepadStickLeft();
+        const gamepadStickRight = this.isGamepadStickRight();
+        
+        // Track stick state to detect "just pressed" (avoid continuous triggering)
+        if (!this.lastStickLeftState) this.lastStickLeftState = false;
+        if (!this.lastStickRightState) this.lastStickRightState = false;
+        
+        const stickLeftJustPressed = gamepadStickLeft && !this.lastStickLeftState;
+        const stickRightJustPressed = gamepadStickRight && !this.lastStickRightState;
+        
+        this.lastStickLeftState = gamepadStickLeft;
+        this.lastStickRightState = gamepadStickRight;
+        
+        // Navigate left (A key or left stick)
+        if (Phaser.Input.Keyboard.JustDown(keys.a) || stickLeftJustPressed) {
+            console.log('[BattleScene] A key/Left stick pressed - navigating left');
             this.selectedEnemyIndex--;
             if (this.selectedEnemyIndex < 0) {
                 this.selectedEnemyIndex = this.enemies.length - 1;
@@ -945,9 +988,9 @@ export default class BattleScene extends Phaser.Scene {
             this.updateEnemySelectionUI();
         }
         
-        // Navigate right (D)
-        if (Phaser.Input.Keyboard.JustDown(keys.d)) {
-            console.log('[BattleScene] D key pressed - navigating right');
+        // Navigate right (D key or right stick)
+        if (Phaser.Input.Keyboard.JustDown(keys.d) || stickRightJustPressed) {
+            console.log('[BattleScene] D key/Right stick pressed - navigating right');
             this.selectedEnemyIndex++;
             if (this.selectedEnemyIndex >= this.enemies.length) {
                 this.selectedEnemyIndex = 0;
@@ -956,15 +999,15 @@ export default class BattleScene extends Phaser.Scene {
             this.updateEnemySelectionUI();
         }
         
-        // Confirm selection (])
-        if (Phaser.Input.Keyboard.JustDown(keys.confirm)) {
-            console.log('[BattleScene] ] key pressed - confirming selection');
+        // Confirm selection (U key or A button)
+        if (Phaser.Input.Keyboard.JustDown(keys.confirm) || this.isGamepadButtonJustPressed(0)) {
+            console.log('[BattleScene] U/A button pressed - confirming selection');
             this.confirmEnemySelection();
         }
         
-        // Cancel (ESC)
-        if (Phaser.Input.Keyboard.JustDown(keys.cancel)) {
-            console.log('[BattleScene] ESC key pressed - cancelling selection');
+        // Cancel (ESC key or B button)
+        if (Phaser.Input.Keyboard.JustDown(keys.cancel) || this.isGamepadButtonJustPressed(1)) {
+            console.log('[BattleScene] ESC/B button pressed - cancelling selection');
             this.cancelEnemySelection();
         }
     }
@@ -1028,6 +1071,8 @@ export default class BattleScene extends Phaser.Scene {
         // Reset state
         this.isEnemySelectionMode = false;
         this.selectedEnemyIndex = 0;
+        this.lastStickLeftState = false;
+        this.lastStickRightState = false;
         
         console.log('[BattleScene] Enemy selection cleanup complete');
     }
@@ -1463,6 +1508,10 @@ export default class BattleScene extends Phaser.Scene {
     handleRecruitmentVictory(npcData) {
         console.log('[BattleScene] Ending battle after recruitment');
         
+        // Save player health before leaving battle
+        gameStateManager.updatePlayerHealth(this.currentHP);
+        console.log(`[BattleScene] Saved player health on recruitment: ${this.currentHP}/${this.maxHP}`);
+        
         // Mark as recruited (won't trigger battles anymore)
         const transitionData = {
             battleVictory: true,
@@ -1764,6 +1813,10 @@ export default class BattleScene extends Phaser.Scene {
 
         console.log('[BattleScene] Returning to world');
         
+        // Save player health before leaving battle
+        gameStateManager.updatePlayerHealth(this.currentHP);
+        console.log(`[BattleScene] Saved player health on escape: ${this.currentHP}/${this.maxHP}`);
+        
         // Collect current NPC health data before cleanup
         const updatedNpcHealth = this.enemies.map(enemy => ({
             id: enemy.enemyData.id,
@@ -1803,6 +1856,20 @@ export default class BattleScene extends Phaser.Scene {
     update() {
         const delta = this.game.loop.delta;
         
+        // Update gamepad reference
+        this.updateGamepad();
+        
+        // Check for pause with Start button (button 9)
+        if (this.isGamepadButtonJustPressed(9)) {
+            this.toggleGamePause();
+            return;
+        }
+        
+        // If paused, don't process any other input
+        if (this.isPaused) {
+            return;
+        }
+        
         // Handle dialogue navigation first (if dialogue is active)
         if (this.isDialogueActive) {
             // Dialogue is handled by DialogueCard, just return without processing other input
@@ -1825,63 +1892,58 @@ export default class BattleScene extends Phaser.Scene {
         // Update AP system
         this.updateAP(delta);
 
-        // Check for escape key
-        if (Phaser.Input.Keyboard.JustDown(this.escapeKey)) {
-            console.log('[BattleScene] ESC key pressed, returning to world');
+        // Check for escape key (keyboard ESC or gamepad L2 trigger - button 6)
+        if (Phaser.Input.Keyboard.JustDown(this.escapeKey) || this.isGamepadButtonJustPressed(6)) {
+            console.log('[BattleScene] ESC/L2 pressed, returning to world');
             this.returnToWorld();
             return;
         }
+        
+        // Check for battle menu (keyboard / or gamepad Select - button 8)
+        if (Phaser.Input.Keyboard.JustDown(this.slashKey) || this.isGamepadButtonJustPressed(8)) {
+            console.log('[BattleScene] //Select pressed, opening Battle Menu');
+            this.openBattleMenu();
+            return;
+        }
 
-        // Handle character switching with number keys (NEW SYSTEM)
-        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key0)) {
-            console.log('[BattleScene] 0 pressed - activating group movement mode');
+        // Handle group movement mode with 0 key or D-pad Up (button 12)
+        if (Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.groupMode) || 
+            this.isGamepadButtonJustPressed(12)) {
+            console.log('[BattleScene] 0/D-pad Up pressed - activating group movement mode');
             this.activateGroupMovement();
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key1)) {
-            console.log('[BattleScene] 1 pressed - controlling Player');
-            this.switchToCharacter(0); // Player
+        // Handle character rotation with Q/E keys or D-pad Left/Right (buttons 14/15)
+        const rotateLeft = Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.rotateLeft) || 
+                          this.isGamepadButtonJustPressed(14);
+        const rotateRight = Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.rotateRight) || 
+                           this.isGamepadButtonJustPressed(15);
+        
+        if (rotateLeft) {
+            console.log('[BattleScene] Q/D-pad Left pressed - rotating to previous character');
+            this.rotateCharacter('left');
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key2) && this.partyCharacters.length >= 1) {
-            console.log('[BattleScene] 2 pressed - controlling party member 1');
-            this.switchToCharacter(1); // First party member
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key3) && this.partyCharacters.length >= 2) {
-            console.log('[BattleScene] 3 pressed - controlling party member 2');
-            this.switchToCharacter(2); // Second party member
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(this.numberKeys.key4) && this.partyCharacters.length >= 3) {
-            console.log('[BattleScene] 4 pressed - controlling party member 3');
-            this.switchToCharacter(3); // Third party member
-        }
-        
-        // OLD: Handle character switching with Q/E (can be removed if not needed)
-        if (Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.switchLeft)) {
-            console.log('[BattleScene] Q pressed - switching character left');
-            this.switchCharacter('left');
-        }
-        
-        if (Phaser.Input.Keyboard.JustDown(this.characterSwitchKeys.switchRight)) {
-            console.log('[BattleScene] E pressed - switching character right');
-            this.switchCharacter('right');
+        if (rotateRight) {
+            console.log('[BattleScene] E/D-pad Right pressed - rotating to next character');
+            this.rotateCharacter('right');
         }
 
-        // Handle AP charging
+        // Handle AP charging (keyboard = or gamepad R2 - button 7)
+        const isR2Pressed = this.gamepad && this.gamepad.buttons && this.gamepad.buttons[7] && this.gamepad.buttons[7].pressed;
         const isChargingKeyPressed = (this.chargeAPKey && this.chargeAPKey.isDown) || 
-                                   (this.chargeAPKeyAlt && this.chargeAPKeyAlt.isDown);
+                                   (this.chargeAPKeyAlt && this.chargeAPKeyAlt.isDown) ||
+                                   isR2Pressed;
         
         if (isChargingKeyPressed) {
             if (!this.isChargingAP) {
-                console.log('[BattleScene] = held - starting AP charge');
+                console.log('[BattleScene] =/R2 held - starting AP charge');
                 this.isChargingAP = true;
                 this.showChargingFeedback();
             }
         } else {
             if (this.isChargingAP) {
-                console.log('[BattleScene] = released - stopping AP charge');
+                console.log('[BattleScene] =/R2 released - stopping AP charge');
                 this.isChargingAP = false;
             }
         }
@@ -1896,24 +1958,28 @@ export default class BattleScene extends Phaser.Scene {
             this.handleFaceButtonInput();
         }
 
-        // Handle dash (only if has AP)
-        if (Phaser.Input.Keyboard.JustDown(this.dashKey) && this.canDash && !this.isDashing && this.currentAP > 0) {
+        // Handle dash (only if has AP) - Shift key or L1 button
+        const dashPressed = Phaser.Input.Keyboard.JustDown(this.dashKey) || this.isGamepadButtonJustPressed(4);
+        if (dashPressed && this.canDash && !this.isDashing && this.currentAP > 0) {
             console.log('[Update] Dash initiated');
             this.dash();
         }
 
-        // Player/Party movement with WASD (only if not dashing, during player turn, and has AP)
+        // Player/Party movement with WASD or Left Stick (only if not dashing, during player turn, and has AP)
+        const moveLeft = this.wasdKeys.left.isDown || this.isGamepadStickLeft();
+        const moveRight = this.wasdKeys.right.isDown || this.isGamepadStickRight();
+        
         if (!this.isDashing && this.isPlayerTurn && this.currentAP > 0) {
             if (this.groupMovementMode) {
                 // GROUP MOVEMENT MODE (key 0): All characters move together
-                if (this.wasdKeys.left.isDown) {
+                if (moveLeft) {
                     console.log('[BattleScene] Group movement - Left');
                     this.player.body.setVelocityX(-300);
                     this.partyCharacters.forEach(char => {
                         if (char.body) char.body.setVelocityX(-300);
                     });
                     this.isMoving = true;
-                } else if (this.wasdKeys.right.isDown) {
+                } else if (moveRight) {
                     console.log('[BattleScene] Group movement - Right');
                     this.player.body.setVelocityX(300);
                     this.partyCharacters.forEach(char => {
@@ -1931,11 +1997,11 @@ export default class BattleScene extends Phaser.Scene {
                 // INDIVIDUAL CHARACTER CONTROL MODE (keys 1-4): Only selected character moves
                 const activeChar = this.getActiveCharacterObject();
                 if (activeChar && activeChar.body) {
-                    if (this.wasdKeys.left.isDown) {
+                    if (moveLeft) {
                         console.log('[BattleScene] Individual movement - Left (char', this.activeCharacterIndex, ')');
                         activeChar.body.setVelocityX(-300);
                         this.isMoving = true;
-                    } else if (this.wasdKeys.right.isDown) {
+                    } else if (moveRight) {
                         console.log('[BattleScene] Individual movement - Right (char', this.activeCharacterIndex, ')');
                         activeChar.body.setVelocityX(300);
                         this.isMoving = true;
@@ -1964,14 +2030,15 @@ export default class BattleScene extends Phaser.Scene {
             this.isMoving = false;
             
             // Show feedback when trying to move without AP
-            if (this.isPlayerTurn && this.currentAP <= 0 && (this.wasdKeys.left.isDown || this.wasdKeys.right.isDown)) {
+            if (this.isPlayerTurn && this.currentAP <= 0 && (moveLeft || moveRight)) {
                 this.showNoAPFeedback();
             }
         }
         // If dashing, velocity is controlled by dash function
 
-        // Player jump with W
-        if (this.wasdKeys.up.isDown && this.player.body.touching.down && this.isPlayerTurn) {
+        // Player jump with W or Up on stick
+        const jumpPressed = this.wasdKeys.up.isDown || this.isGamepadStickUp();
+        if (jumpPressed && this.player.body.touching.down && this.isPlayerTurn) {
             console.log('[BattleScene] Up key pressed - jumping');
             this.player.body.setVelocityY(-450);
         }
@@ -2217,9 +2284,12 @@ export default class BattleScene extends Phaser.Scene {
             this.currentHP = Math.max(0, this.currentHP - damage);
             console.log(`[NPC AI] Player HP: ${this.currentHP}/${this.maxHP}`);
             
+            // Save health to gameStateManager immediately
+            gameStateManager.updatePlayerHealth(this.currentHP);
+            
             // Update HUD to reflect HP change
             if (this.hudManager) {
-                this.hudManager.updatePlayerStats();
+                this.hudManager.updateBattlePartyStats();
             }
             
             // Apply knockback to player
@@ -2392,14 +2462,14 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     handleFaceButtonInput() {
-        // Handle U key (Player melee combo attack)
-        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.u)) {
+        // Handle U key or A button (Player melee combo attack)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.u) || this.isGamepadButtonJustPressed(0)) {
             console.log('[BattleScene] U pressed - Player melee combo attack');
             this.performMeleeComboAttack();
         }
         
-        // Handle I key (Party Member 1 ability - if exists)
-        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.i)) {
+        // Handle I key or B button (Party Member 1 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.i) || this.isGamepadButtonJustPressed(1)) {
             if (this.partyCharacters[0]) {
                 console.log('[BattleScene] I pressed - Party Member 1 ability');
                 this.executePartyMemberAbility(0);
@@ -2408,8 +2478,8 @@ export default class BattleScene extends Phaser.Scene {
             }
         }
         
-        // Handle O key (Party Member 2 ability - if exists)
-        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.o)) {
+        // Handle O key or X button (Party Member 2 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.o) || this.isGamepadButtonJustPressed(2)) {
             if (this.partyCharacters[1]) {
                 console.log('[BattleScene] O pressed - Party Member 2 ability');
                 this.executePartyMemberAbility(1);
@@ -2418,8 +2488,8 @@ export default class BattleScene extends Phaser.Scene {
             }
         }
         
-        // Handle P key (Party Member 3 ability - if exists)
-        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.p)) {
+        // Handle P key or Y button (Party Member 3 ability - if exists)
+        if (Phaser.Input.Keyboard.JustDown(this.faceButtons.p) || this.isGamepadButtonJustPressed(3)) {
             if (this.partyCharacters[2]) {
                 console.log('[BattleScene] P pressed - Party Member 3 ability');
                 this.executePartyMemberAbility(2);
@@ -2427,6 +2497,144 @@ export default class BattleScene extends Phaser.Scene {
                 console.log('[BattleScene] P pressed - No party member in slot 3');
             }
         }
+    }
+    
+    /**
+     * Update gamepad reference from global
+     */
+    updateGamepad() {
+        if (window.getGlobalGamepad) {
+            const pad = window.getGlobalGamepad();
+            if (pad && pad.connected) {
+                this.gamepad = pad;
+                
+                // Debug: Log gamepad state periodically (every 2 seconds)
+                if (!this.lastGamepadDebug || Date.now() - this.lastGamepadDebug > 2000) {
+                    // Check for any pressed buttons
+                    const pressedButtons = [];
+                    for (let i = 0; i < Math.min(pad.buttons.length, 17); i++) {
+                        if (pad.buttons[i].pressed || pad.buttons[i].value > 0.5) {
+                            pressedButtons.push(i);
+                        }
+                    }
+                    
+                    // Check stick movement
+                    const leftX = (pad.axes[0] || 0).toFixed(2);
+                    const leftY = (pad.axes[1] || 0).toFixed(2);
+                    const stickMoved = Math.abs(pad.axes[0]) > 0.1 || Math.abs(pad.axes[1]) > 0.1;
+                    
+                    if (pressedButtons.length > 0 || stickMoved) {
+                        console.log('[BattleScene] Gamepad active:', {
+                            buttons: pressedButtons,
+                            leftStick: { x: leftX, y: leftY }
+                        });
+                    }
+                    
+                    this.lastGamepadDebug = Date.now();
+                }
+            } else if (this.gamepad && !this.gamepad.connected) {
+                this.gamepad = null;
+            }
+        } else {
+            // Fallback: try to get gamepad directly from browser API
+            try {
+                const gamepads = navigator.getGamepads();
+                if (gamepads && gamepads.length > 0) {
+                    for (let i = 0; i < gamepads.length; i++) {
+                        const pad = gamepads[i];
+                        if (pad && pad.connected) {
+                            this.gamepad = pad;
+                            if (!this.gamepadFallbackLogged) {
+                                console.log('[BattleScene] Using fallback gamepad access:', pad.id);
+                                this.gamepadFallbackLogged = true;
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+    }
+    
+    /**
+     * Check if gamepad button is currently pressed
+     */
+    isGamepadButtonPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        const button = this.gamepad.buttons[buttonIndex];
+        return button && (button.pressed || button.value > 0.5);
+    }
+    
+    /**
+     * Check if gamepad button was just pressed (first frame)
+     */
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        
+        // Ensure gamepadButtonStates is initialized
+        if (!this.gamepadButtonStates) {
+            this.gamepadButtonStates = {};
+        }
+        
+        const button = this.gamepad.buttons[buttonIndex];
+        const isPressed = button && (button.pressed || button.value > 0.5);
+        const key = `button_${buttonIndex}`;
+        const wasPressed = this.gamepadButtonStates[key] || false;
+        this.gamepadButtonStates[key] = isPressed;
+        
+        const justPressed = isPressed && !wasPressed;
+        if (justPressed) {
+            console.log('[BattleScene] Gamepad button just pressed:', buttonIndex);
+        }
+        
+        return justPressed;
+    }
+    
+    /**
+     * Check if left stick is moved left
+     */
+    isGamepadStickLeft() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        const isLeft = axisX < -0.3;
+        
+        // Debug once
+        if (isLeft && !this.stickLeftLogged) {
+            console.log('[BattleScene] Left stick moved left:', axisX.toFixed(2));
+            this.stickLeftLogged = true;
+            setTimeout(() => { this.stickLeftLogged = false; }, 1000);
+        }
+        
+        return isLeft;
+    }
+    
+    /**
+     * Check if left stick is moved right
+     */
+    isGamepadStickRight() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        return axisX > 0.3;
+    }
+    
+    /**
+     * Check if left stick is moved up
+     */
+    isGamepadStickUp() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        return axisY < -0.3;
+    }
+    
+    /**
+     * Check if left stick is moved down
+     */
+    isGamepadStickDown() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        return axisY > 0.3;
     }
     
     showNoAPFeedback() {
@@ -3251,18 +3459,50 @@ export default class BattleScene extends Phaser.Scene {
             defaultDirection = this.player.x < closestEnemy.x ? 1 : -1;
         }
         
-        // Allow player to override direction with left/right keys
+        // Check gamepad left stick input
+        let gamepadDirection = null;
+        if (this.gamepad && this.gamepad.axes) {
+            const axisX = this.gamepad.axes[0] || 0;
+            const deadzone = 0.3;
+            if (axisX < -deadzone) {
+                gamepadDirection = -1; // Left
+            } else if (axisX > deadzone) {
+                gamepadDirection = 1; // Right
+            }
+        }
+        
+        // Allow player to override direction with left/right keys or gamepad stick
         const dashDirection = this.wasdKeys.left.isDown ? -1 : 
                             this.wasdKeys.right.isDown ? 1 : 
+                            gamepadDirection !== null ? gamepadDirection :
                             defaultDirection;
         
-        // Apply dash velocity
-        this.player.body.setVelocityX(this.dashSpeed * dashDirection);
-        
-        // Visual feedback - make player slightly transparent during dash
-        this.player.setAlpha(0.7);
+        // Apply dash velocity based on mode
+        if (this.groupMovementMode) {
+            // GROUP MODE: All characters dash together
+            console.log('[Dash] Group dash - all characters dashing together');
+            this.player.body.setVelocityX(this.dashSpeed * dashDirection);
+            this.player.setAlpha(0.7);
+            
+            // Dash all party characters
+            this.partyCharacters.forEach(char => {
+                if (char.body) {
+                    char.body.setVelocityX(this.dashSpeed * dashDirection);
+                    char.setAlpha(0.7);
+                }
+            });
+        } else {
+            // SINGLE CHARACTER MODE: Only active character dashes
+            console.log('[Dash] Single character dash - only active character dashing');
+            
+            if (this.activeCharacter && this.activeCharacter.body) {
+                this.activeCharacter.body.setVelocityX(this.dashSpeed * dashDirection);
+                this.activeCharacter.setAlpha(0.7);
+            }
+        }
         
         console.log('[Dash] Executing dash:', {
+            mode: this.groupMovementMode ? 'GROUP' : 'SINGLE',
             direction: dashDirection > 0 ? 'right' : 'left',
             towardEnemy: closestEnemy ? closestEnemy.enemyData.type : 'none',
             speed: this.dashSpeed,
@@ -3275,8 +3515,26 @@ export default class BattleScene extends Phaser.Scene {
         this.time.delayedCall(this.dashDuration, () => {
             this.isDashing = false;
             this.isDashingAP = false; // Stop consuming AP for dash
-            this.player.setAlpha(1);
-            this.player.body.setVelocityX(0);
+            
+            if (this.groupMovementMode) {
+                // Reset all characters in group mode
+                this.player.setAlpha(1);
+                this.player.body.setVelocityX(0);
+                
+                this.partyCharacters.forEach(char => {
+                    if (char.body) {
+                        char.setAlpha(1);
+                        char.body.setVelocityX(0);
+                    }
+                });
+            } else {
+                // Reset only active character in single mode
+                if (this.activeCharacter && this.activeCharacter.body) {
+                    this.activeCharacter.setAlpha(1);
+                    this.activeCharacter.body.setVelocityX(0);
+                }
+            }
+            
             console.log('[Dash] Dash completed, AP remaining:', Math.floor(this.currentAP));
         });
 
@@ -3887,30 +4145,47 @@ export default class BattleScene extends Phaser.Scene {
         });
     }
     
-    // OLD switchCharacter method (Q/E keys) - kept for backwards compatibility
-    switchCharacter(direction) {
+    /**
+     * Rotate through characters (Q/E keys or D-pad Left/Right)
+     * @param {string} direction - 'left' or 'right'
+     */
+    rotateCharacter(direction) {
         if (this.characterSwitchCooldown > 0) return;
         
+        // Exit group movement mode
+        this.groupMovementMode = false;
+        
+        const totalCharacters = 1 + this.partyCharacters.length; // Player + party members
         const oldIndex = this.activeCharacterIndex;
         
         if (direction === 'left') {
-            this.activeCharacterIndex = (this.activeCharacterIndex - 1 + this.partyMembers.length) % this.partyMembers.length;
+            // Cycle to previous character
+            this.activeCharacterIndex = (this.activeCharacterIndex - 1 + totalCharacters) % totalCharacters;
         } else {
-            this.activeCharacterIndex = (this.activeCharacterIndex + 1) % this.partyMembers.length;
+            // Cycle to next character
+            this.activeCharacterIndex = (this.activeCharacterIndex + 1) % totalCharacters;
         }
         
         if (oldIndex !== this.activeCharacterIndex) {
-            this.activeCharacter = this.partyMembers[this.activeCharacterIndex];
+            // Set active character: 0 = player, 1+ = party members
+            if (this.activeCharacterIndex === 0) {
+                this.activeCharacter = this.player;
+            } else {
+                this.activeCharacter = this.partyCharacters[this.activeCharacterIndex - 1];
+            }
+            
             this.characterSwitchCooldown = this.characterSwitchDelay;
             
-            console.log(`[BattleScene] Switched to character ${this.activeCharacterIndex}: ${this.activeCharacter.name}`);
+            const characterName = this.activeCharacterIndex === 0 ? 'Player' : 
+                                 this.partyMembersData[this.activeCharacterIndex - 1]?.name || 'Unknown';
+            console.log(`[BattleScene] Switched to character ${this.activeCharacterIndex}: ${characterName}`);
             
             // Visual feedback for character switch
-            this.showCharacterSwitchFeedback();
+            this.showCharacterSwitchFeedback(characterName);
         }
     }
     
-    showCharacterSwitchFeedback() {
+    showCharacterSwitchFeedback(characterName) {
         // Create temporary text showing active character
         const centerX = this.cameras.main.width / 2;
         const centerY = this.cameras.main.height / 2;
@@ -3918,7 +4193,7 @@ export default class BattleScene extends Phaser.Scene {
         const switchText = this.add.text(
             centerX,
             centerY - 100,
-            `Active: ${this.activeCharacter.name}`,
+            `Active: ${characterName}`,
             {
                 fontSize: '24px',
                 fontFamily: 'Arial',
@@ -4160,10 +4435,116 @@ export default class BattleScene extends Phaser.Scene {
         console.log('[BattleScene] Cleanup complete');
     }
 
+    toggleGamePause() {
+        this.isPaused = !this.isPaused;
+        
+        if (this.isPaused) {
+            console.log('[BattleScene] ⏸️ GAME PAUSED (Enter/Start)');
+            
+            // Pause the game timer
+            gameStateManager.pauseTimer();
+            
+            // Pause the scene
+            this.scene.pause();
+            
+            // Create pause overlay
+            this.createPauseOverlay();
+        } else {
+            console.log('[BattleScene] ▶️ GAME RESUMED (Enter/Start)');
+            
+            // Resume the game timer
+            gameStateManager.resumeTimer();
+            
+            // Remove pause overlay
+            this.removePauseOverlay();
+            
+            // Resume the scene
+            this.scene.resume();
+        }
+    }
+    
+    createPauseOverlay() {
+        // Create pause overlay in DOM
+        this.pauseOverlay = document.createElement('div');
+        this.pauseOverlay.id = 'battle-pause-overlay';
+        this.pauseOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        `;
+        
+        this.pauseOverlay.innerHTML = `
+            <div style="text-align: center; color: white;">
+                <div style="font-size: 72px; font-weight: bold; margin-bottom: 30px; color: #FFD700;">
+                    ⏸ PAUSED
+                </div>
+                <div style="font-size: 18px; color: #AAA; margin-bottom: 10px;">
+                    Battle and game time paused
+                </div>
+                <div style="font-size: 18px; color: #AAA;">
+                    Press <span style="color: #FFD700; font-weight: bold;">ENTER</span> or <span style="color: #FFD700; font-weight: bold;">START</span> to resume
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(this.pauseOverlay);
+        
+        // Add DOM keyboard listener for unpause (works even when Phaser scene is paused)
+        this.pauseKeyListener = (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                this.toggleGamePause();
+            }
+        };
+        document.addEventListener('keydown', this.pauseKeyListener);
+        
+        // Poll gamepad for Start button while paused
+        this.pauseGamepadInterval = setInterval(() => {
+            const pad = window.getGlobalGamepad?.();
+            if (pad && pad.buttons && pad.buttons[9] && pad.buttons[9].pressed) {
+                // Check if this is a new press (not held from before pause)
+                if (!this.startButtonWasPressed) {
+                    this.startButtonWasPressed = true;
+                    this.toggleGamePause();
+                }
+            } else {
+                this.startButtonWasPressed = false;
+            }
+        }, 50); // Poll every 50ms
+    }
+    
+    removePauseOverlay() {
+        if (this.pauseOverlay) {
+            this.pauseOverlay.remove();
+            this.pauseOverlay = null;
+        }
+        
+        if (this.pauseKeyListener) {
+            document.removeEventListener('keydown', this.pauseKeyListener);
+            this.pauseKeyListener = null;
+        }
+        
+        if (this.pauseGamepadInterval) {
+            clearInterval(this.pauseGamepadInterval);
+            this.pauseGamepadInterval = null;
+        }
+    }
+
     shutdown() {
         console.log('[BattleScene] Running shutdown');
         this.cleanupInput();
         this.cleanup();
+        
+        // Remove pause overlay if exists
+        this.removePauseOverlay();
         
         // Disable input
         this.input.keyboard.enabled = false;
@@ -4775,6 +5156,10 @@ export default class BattleScene extends Phaser.Scene {
                             console.log('[BattleScene] ========== VICTORY TRANSITION ==========');
                             console.log('[BattleScene] Defeated enemy IDs collected:', this.defeatedEnemyIds);
                             console.log('[BattleScene] Transition data:', JSON.stringify(transitionData, null, 2));
+                            
+                            // Save player health before leaving battle
+                            gameStateManager.updatePlayerHealth(this.currentHP);
+                            console.log(`[BattleScene] Saved player health on victory: ${this.currentHP}/${this.maxHP}`);
                             
                             // Clean up the scene
                             this.cleanup();

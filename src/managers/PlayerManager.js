@@ -29,6 +29,10 @@ class WorldControls extends BaseControls {
         // Add shift key
         this.shiftKey = scene.input.keyboard.addKey('SHIFT');
         
+        // Gamepad support
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        
         // Running state properties
         this.isCharging = false;
         this.isRunning = false;
@@ -64,6 +68,9 @@ class WorldControls extends BaseControls {
                 this.releaseCharge();
             }
         });
+        
+        // Track L1 button state for gamepad charging
+        this.lastL1State = false;
 
         // Add collision callback
         player.body.onCollide = true;
@@ -101,20 +108,61 @@ class WorldControls extends BaseControls {
     update() {
         this.frameCount++;
         
-        // Normal WASD input
+        // Update gamepad
+        this.updateGamepad();
+        
+        // Normal WASD input OR gamepad left stick
         let dx = 0;
         let dy = 0;
 
-        if (this.wasdKeys.left.isDown) dx = -1;
-        if (this.wasdKeys.right.isDown) dx = 1;
-        if (this.wasdKeys.up.isDown) dy = -1;
-        if (this.wasdKeys.down.isDown) dy = 1;
+        // Check gamepad left stick first
+        if (this.gamepad && this.gamepad.axes) {
+            const stickX = this.gamepad.axes[0] || 0;
+            const stickY = this.gamepad.axes[1] || 0;
+            const deadzone = 0.3;
+            
+            if (Math.abs(stickX) > deadzone) {
+                dx = stickX;
+            }
+            if (Math.abs(stickY) > deadzone) {
+                dy = stickY;
+            }
+        }
+        
+        // If no gamepad input, use keyboard
+        if (dx === 0 && dy === 0) {
+            if (this.wasdKeys.left.isDown) dx = -1;
+            if (this.wasdKeys.right.isDown) dx = 1;
+            if (this.wasdKeys.up.isDown) dy = -1;
+            if (this.wasdKeys.down.isDown) dy = 1;
+        }
 
         // Normalize diagonal movement
         if (dx !== 0 && dy !== 0) {
             const length = Math.sqrt(2);
             dx /= length;
             dy /= length;
+        }
+        
+        // Check L1 button (button 4) for charging
+        if (this.gamepad && this.gamepad.buttons && this.gamepad.buttons[4]) {
+            const L1Pressed = this.gamepad.buttons[4].pressed || this.gamepad.buttons[4].value > 0.5;
+            
+            if (L1Pressed && !this.lastL1State) {
+                // L1 just pressed
+                if (!this.isRunning) {
+                    this.startCharging();
+                } else {
+                    this.resetState();
+                }
+            } else if (!L1Pressed && this.lastL1State) {
+                // L1 just released
+                if (this.isCharging) {
+                    this.releaseCharge();
+                }
+            }
+            
+            this.lastL1State = L1Pressed;
         }
 
         if (this.isRunning) {
@@ -274,6 +322,49 @@ class WorldControls extends BaseControls {
             console.log('Physics worldbounds event triggered');
             this.resetState();
         }
+    }
+    
+    /**
+     * Update gamepad reference from global
+     */
+    updateGamepad() {
+        if (window.getGlobalGamepad) {
+            const pad = window.getGlobalGamepad();
+            if (pad && pad.connected) {
+                this.gamepad = pad;
+            } else if (this.gamepad && !this.gamepad.connected) {
+                this.gamepad = null;
+            }
+        } else {
+            // Fallback: try to get gamepad directly from browser API
+            try {
+                const gamepads = navigator.getGamepads();
+                if (gamepads && gamepads.length > 0) {
+                    for (let i = 0; i < gamepads.length; i++) {
+                        const pad = gamepads[i];
+                        if (pad && pad.connected) {
+                            this.gamepad = pad;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+    }
+    
+    /**
+     * Check if gamepad button was just pressed (first frame)
+     */
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        const button = this.gamepad.buttons[buttonIndex];
+        const isPressed = button && (button.pressed || button.value > 0.5);
+        const key = `button_${buttonIndex}`;
+        const wasPressed = this.gamepadButtonStates[key] || false;
+        this.gamepadButtonStates[key] = isPressed;
+        return isPressed && !wasPressed;
     }
 
     destroy() {

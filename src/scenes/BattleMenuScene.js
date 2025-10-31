@@ -9,6 +9,14 @@ export default class BattleMenuScene extends Phaser.Scene {
         this.selectedIconIndex = 0;
         this.icons = [];
         this.timerInterval = null;
+        
+        // Gamepad support
+        this.gamepad = null;
+        this.gamepadButtonStates = {};
+        this.lastStickLeft = false;
+        this.lastStickRight = false;
+        this.lastStickUp = false;
+        this.lastStickDown = false;
     }
 
     init(data) {
@@ -40,8 +48,8 @@ export default class BattleMenuScene extends Phaser.Scene {
             right: Phaser.Input.Keyboard.KeyCodes.D
         });
         
-        // Add ] key for selection/activation
-        this.actionKey = this.input.keyboard.addKey(221); // ] key
+        // Add U key for confirmation (changed from ])
+        this.actionKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.U);
         
         // Add / and ESC key handlers to close menu
         const slashKey = this.input.keyboard.addKey(191); // Forward slash keyCode
@@ -61,19 +69,29 @@ export default class BattleMenuScene extends Phaser.Scene {
     }
     
     update() {
-        // Handle icon navigation with WASD (left/right only)
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.up)) {
+        // Update gamepad
+        this.updateGamepad();
+        
+        // Handle icon navigation with WASD or left stick (left/right only)
+        const navLeft = Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || 
+                        Phaser.Input.Keyboard.JustDown(this.wasdKeys.up) ||
+                        this.isGamepadStickLeft() || this.isGamepadStickUp();
+        const navRight = Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || 
+                         Phaser.Input.Keyboard.JustDown(this.wasdKeys.down) ||
+                         this.isGamepadStickRight() || this.isGamepadStickDown();
+        
+        if (navLeft) {
             this.selectedIconIndex = (this.selectedIconIndex - 1 + this.icons.length) % this.icons.length;
             this.updateIconSelection();
         }
         
-        if (Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || Phaser.Input.Keyboard.JustDown(this.wasdKeys.down)) {
+        if (navRight) {
             this.selectedIconIndex = (this.selectedIconIndex + 1) % this.icons.length;
             this.updateIconSelection();
         }
         
-        // Handle icon activation with ] key
-        if (Phaser.Input.Keyboard.JustDown(this.actionKey)) {
+        // Handle icon activation with U key or A button
+        if (Phaser.Input.Keyboard.JustDown(this.actionKey) || this.isGamepadButtonJustPressed(0)) {
             this.activateCurrentIcon();
         }
     }
@@ -199,7 +217,7 @@ export default class BattleMenuScene extends Phaser.Scene {
                 ${this.icons[0].description}
             </div>
             <div style="font-size: 11px; color: #666; margin-top: 10px;">
-                WASD - Navigate | ] - Select | / or ESC - Close
+                WASD - Navigate | U - Select | / or ESC - Close
             </div>
         `;
         this.menuContainer.appendChild(this.descriptionPanel);
@@ -325,7 +343,7 @@ export default class BattleMenuScene extends Phaser.Scene {
                 ${currentIcon.description}
             </div>
             <div style="font-size: 11px; color: #666; margin-top: 10px;">
-                WASD - Navigate | ] - Select | / or ESC - Close
+                WASD - Navigate | U - Select | / or ESC - Close
             </div>
         `;
     }
@@ -702,6 +720,87 @@ export default class BattleMenuScene extends Phaser.Scene {
         
         // Stop this scene
         this.scene.stop();
+    }
+    
+    /**
+     * Gamepad helper methods
+     */
+    updateGamepad() {
+        if (window.getGlobalGamepad) {
+            const pad = window.getGlobalGamepad();
+            if (pad && pad.connected) {
+                this.gamepad = pad;
+            } else if (this.gamepad && !this.gamepad.connected) {
+                this.gamepad = null;
+            }
+        } else {
+            try {
+                const gamepads = navigator.getGamepads();
+                if (gamepads && gamepads.length > 0) {
+                    for (let i = 0; i < gamepads.length; i++) {
+                        const pad = gamepads[i];
+                        if (pad && pad.connected) {
+                            this.gamepad = pad;
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Ignore
+            }
+        }
+    }
+    
+    isGamepadButtonJustPressed(buttonIndex) {
+        if (!this.gamepad || !this.gamepad.buttons) return false;
+        
+        // Ensure gamepadButtonStates is initialized
+        if (!this.gamepadButtonStates) {
+            this.gamepadButtonStates = {};
+        }
+        
+        const button = this.gamepad.buttons[buttonIndex];
+        const isPressed = button && (button.pressed || button.value > 0.5);
+        const key = `button_${buttonIndex}`;
+        const wasPressed = this.gamepadButtonStates[key] || false;
+        this.gamepadButtonStates[key] = isPressed;
+        return isPressed && !wasPressed;
+    }
+    
+    isGamepadStickLeft() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        const isLeft = axisX < -0.5;
+        const justPressed = isLeft && !this.lastStickLeft;
+        this.lastStickLeft = isLeft;
+        return justPressed;
+    }
+    
+    isGamepadStickRight() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisX = this.gamepad.axes[0] || 0;
+        const isRight = axisX > 0.5;
+        const justPressed = isRight && !this.lastStickRight;
+        this.lastStickRight = isRight;
+        return justPressed;
+    }
+    
+    isGamepadStickUp() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isUp = axisY < -0.5;
+        const justPressed = isUp && !this.lastStickUp;
+        this.lastStickUp = isUp;
+        return justPressed;
+    }
+    
+    isGamepadStickDown() {
+        if (!this.gamepad || !this.gamepad.axes) return false;
+        const axisY = this.gamepad.axes[1] || 0;
+        const isDown = axisY > 0.5;
+        const justPressed = isDown && !this.lastStickDown;
+        this.lastStickDown = isDown;
+        return justPressed;
     }
 
     shutdown() {
