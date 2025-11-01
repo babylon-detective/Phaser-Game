@@ -95,11 +95,11 @@ export default class ShooterScene extends Phaser.Scene {
     }
     
     createM7Player(width, height) {
-        console.log('[ShooterScene] Creating M7-style player (two rectangles)');
+        console.log('[ShooterScene] Creating flying red square with aiming head');
         
-        // Player object with M7 control system
+        // Player object - flying red square
         this.player = {
-            // Main (larger) rectangle
+            // Main flying red square
             x: width / 2,
             y: height * 0.45,   // Position at 45% from top (above horizon)
             size: Math.min(width, height) * 0.15,
@@ -112,7 +112,7 @@ export default class ShooterScene extends Phaser.Scene {
             worldX: 0,
             worldY: 0,
             
-            // Leading (smaller) rectangle
+            // Aiming head (smaller square in front)
             leader: {
                 x: width / 2,
                 y: height * 0.45,
@@ -122,7 +122,24 @@ export default class ShooterScene extends Phaser.Scene {
             }
         };
         
-        console.log('[ShooterScene] M7 player created');
+        // Create parallax cursor for 3D aiming
+        this.cursor = {
+            x: width / 2,
+            y: height / 2,
+            size: 20,
+            targetX: width / 2,
+            targetY: height / 2,
+            smoothing: 0.15,  // Parallax smoothing
+            depth: 0  // Depth indicator for parallax
+        };
+        
+        // Enable mouse/pointer input for cursor
+        this.input.on('pointermove', (pointer) => {
+            this.cursor.targetX = pointer.x;
+            this.cursor.targetY = pointer.y;
+        });
+        
+        console.log('[ShooterScene] Flying red square with aiming head created');
     }
     
     updateGround(time) {
@@ -270,19 +287,9 @@ export default class ShooterScene extends Phaser.Scene {
     drawPlayer(graphics) {
         if (!this.player) return;
         
-        // Draw leading (smaller) rectangle - Yellow
-        graphics.lineStyle(2, 0xFFFF00);
-        graphics.fillStyle(0xFFFF00, 0.7);
-        graphics.fillRect(
-            this.player.leader.x - this.player.leader.size/2,
-            this.player.leader.y - this.player.leader.size/2,
-            this.player.leader.size,
-            this.player.leader.size
-        );
-        
-        // Draw main (larger) rectangle - Red
-        graphics.lineStyle(2, 0xFF0000);
-        graphics.fillStyle(0xFF0000, 1.0);
+        // Draw flying red square (main body)
+        graphics.lineStyle(3, 0xFF0000);
+        graphics.fillStyle(0xFF0000, 0.9);
         graphics.fillRect(
             this.player.x - this.player.size/2,
             this.player.y - this.player.size/2,
@@ -290,12 +297,64 @@ export default class ShooterScene extends Phaser.Scene {
             this.player.size
         );
         
-        // Draw line connecting the rectangles
-        graphics.lineStyle(1, 0xFFFFFF, 0.5);
+        // Draw aiming head (smaller yellow square in front)
+        graphics.lineStyle(2, 0xFFFF00);
+        graphics.fillStyle(0xFFFF00, 0.8);
+        graphics.fillRect(
+            this.player.leader.x - this.player.leader.size/2,
+            this.player.leader.y - this.player.leader.size/2,
+            this.player.leader.size,
+            this.player.leader.size
+        );
+        
+        // Draw aim line from body to head
+        graphics.lineStyle(2, 0xFFFF00, 0.6);
         graphics.beginPath();
         graphics.moveTo(this.player.x, this.player.y);
         graphics.lineTo(this.player.leader.x, this.player.leader.y);
         graphics.strokePath();
+        
+        // Draw extended aim line to cursor (shows 3D aiming)
+        if (this.cursor) {
+            graphics.lineStyle(1, 0x00FFFF, 0.4);
+            graphics.setLineDash([5, 5]); // Dashed line
+            graphics.beginPath();
+            graphics.moveTo(this.player.leader.x, this.player.leader.y);
+            graphics.lineTo(this.cursor.x, this.cursor.y);
+            graphics.strokePath();
+            graphics.setLineDash([]); // Reset dash
+        }
+    }
+    
+    drawCursor(graphics) {
+        if (!this.cursor) return;
+        
+        // Calculate depth-based size (parallax effect)
+        const depthScale = 1 + (this.cursor.depth * 0.3);
+        const cursorSize = this.cursor.size * depthScale;
+        
+        // Draw crosshair cursor
+        graphics.lineStyle(2, 0x00FFFF, 0.8);
+        
+        // Horizontal line
+        graphics.beginPath();
+        graphics.moveTo(this.cursor.x - cursorSize, this.cursor.y);
+        graphics.lineTo(this.cursor.x + cursorSize, this.cursor.y);
+        graphics.strokePath();
+        
+        // Vertical line
+        graphics.beginPath();
+        graphics.moveTo(this.cursor.x, this.cursor.y - cursorSize);
+        graphics.lineTo(this.cursor.x, this.cursor.y + cursorSize);
+        graphics.strokePath();
+        
+        // Center dot
+        graphics.fillStyle(0x00FFFF, 0.6);
+        graphics.fillCircle(this.cursor.x, this.cursor.y, 3);
+        
+        // Outer ring (shows parallax depth)
+        graphics.lineStyle(1, 0x00FFFF, 0.4);
+        graphics.strokeCircle(this.cursor.x, this.cursor.y, cursorSize);
     }
     
     createHUD(width, height) {
@@ -317,7 +376,7 @@ export default class ShooterScene extends Phaser.Scene {
         this.instructionText = this.add.text(
             20,
             20,
-            'WASD: Move | ESC: Exit',
+            'WASD: Move | Mouse: Aim | ESC: Exit',
             {
                 fontSize: '16px',
                 fontFamily: 'Arial',
@@ -326,6 +385,21 @@ export default class ShooterScene extends Phaser.Scene {
                 strokeThickness: 2
             }
         ).setDepth(200);
+        
+        // Character description
+        this.charText = this.add.text(
+            width - 20,
+            20,
+            '🔴 Red Square: Body\n🟡 Yellow Square: Head',
+            {
+                fontSize: '14px',
+                fontFamily: 'Arial',
+                color: '#FFFFFF',
+                stroke: '#000000',
+                strokeThickness: 2,
+                align: 'right'
+            }
+        ).setOrigin(1, 0).setDepth(200);
     }
     
     update(time, delta) {
@@ -333,6 +407,9 @@ export default class ShooterScene extends Phaser.Scene {
         
         // Handle M7-style player input
         this.handlePlayerInput();
+        
+        // Update parallax cursor
+        this.updateCursor();
         
         // Update ground (M7 style with tilting horizon)
         this.updateGround(time);
@@ -345,8 +422,11 @@ export default class ShooterScene extends Phaser.Scene {
             this.playerGraphics.clear();
         }
         
-        // Draw player (M7 style two rectangles)
+        // Draw player (flying red square with aiming head)
         this.drawPlayer(this.playerGraphics);
+        
+        // Draw parallax cursor
+        this.drawCursor(this.playerGraphics);
         
         // Update HUD
         this.updateHUD(time);
@@ -358,6 +438,25 @@ export default class ShooterScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.escapeKey)) {
             this.exitShooterScene();
         }
+    }
+    
+    updateCursor() {
+        if (!this.cursor) return;
+        
+        // Smooth parallax movement towards target
+        this.cursor.x += (this.cursor.targetX - this.cursor.x) * this.cursor.smoothing;
+        this.cursor.y += (this.cursor.targetY - this.cursor.y) * this.cursor.smoothing;
+        
+        // Calculate depth based on vertical position (higher = further)
+        // Cursor near horizon = further away (larger), cursor at bottom = closer (smaller)
+        const height = this.cameras.main.height;
+        const horizonY = this.groundConfig.horizonY;
+        
+        // Normalize Y position (0 = horizon, 1 = bottom)
+        const normalizedY = Math.max(0, Math.min(1, (this.cursor.y - horizonY) / (height - horizonY)));
+        
+        // Invert for depth (0 = close, 1 = far)
+        this.cursor.depth = 1 - normalizedY;
     }
     
     handlePlayerInput() {

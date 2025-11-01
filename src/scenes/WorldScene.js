@@ -317,6 +317,25 @@ export default class WorldScene extends Phaser.Scene {
                 isOnSavePoint: this.isOnSavePoint
             });
         });
+        
+        // DEBUG: F1 key to instantly access ShooterScene
+        const f1Key = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1);
+        f1Key.on('down', () => {
+            console.log('[WorldScene] 🐛 DEBUG: F1 pressed - launching ShooterScene');
+            const currentLeader = partyLeadershipManager.getLeader();
+            const returnPosition = currentLeader && currentLeader.sprite ? {
+                x: currentLeader.sprite.x,
+                y: currentLeader.sprite.y
+            } : {
+                x: this.playerManager.player.x,
+                y: this.playerManager.player.y
+            };
+            
+            this.scene.pause();
+            this.scene.launch('ShooterScene', {
+                returnPosition: returnPosition
+            });
+        });
 
         // Set up Return (Enter) key to FULLY pause the game
         this.isPaused = false;
