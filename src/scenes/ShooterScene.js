@@ -5,12 +5,10 @@ export default class ShooterScene extends Phaser.Scene {
     constructor() {
         super({ key: 'ShooterScene' });
         
-        // Rail shooter properties
-        this.scrollSpeed = 3;
-        this.playerShip = null;
-        this.enemies = [];
-        this.projectiles = [];
-        this.enemyProjectiles = [];
+        // M7 style player system
+        this.player = null;
+        this.angle = 0;
+        this.horizonTilt = 0;
         
         // Time limit
         this.timeLimit = 60000; // 60 seconds
@@ -20,10 +18,6 @@ export default class ShooterScene extends Phaser.Scene {
         // Score
         this.score = 0;
         this.scoreText = null;
-        
-        // Enemy spawn
-        this.lastEnemySpawn = 0;
-        this.enemySpawnInterval = 1500; // 1.5 seconds
     }
 
     init(data) {
@@ -32,7 +26,7 @@ export default class ShooterScene extends Phaser.Scene {
     }
 
     create() {
-        console.log('[ShooterScene] Creating rail shooter scene');
+        console.log('[ShooterScene] Creating M7 style rail shooter scene');
         
         // Start timer
         this.startTime = this.time.now;
@@ -44,8 +38,8 @@ export default class ShooterScene extends Phaser.Scene {
         // Create Mac System 7 style pseudo-3D ground with track
         this.createWaterGround(height * 0.6);
         
-        // Create player ship
-        this.createPlayerShip(width, height);
+        // Create M7 style player (two rectangles)
+        this.createM7Player(width, height);
         
         // Set up input
         this.setupInput();
@@ -53,7 +47,7 @@ export default class ShooterScene extends Phaser.Scene {
         // Create HUD
         this.createHUD(width, height);
         
-        console.log('[ShooterScene] Rail shooter initialized');
+        console.log('[ShooterScene] M7 rail shooter initialized');
     }
     
     createWaterGround(groundY) {
@@ -88,7 +82,9 @@ export default class ShooterScene extends Phaser.Scene {
             baseScale: 16,
             cameraHeight: 200,
             PERSPECTIVE_SCALE: 0.5,
-            GRADIENT_INTENSITY: 1.5
+            GRADIENT_INTENSITY: 1.5,
+            MAX_HORIZON_TILT: 0.3,
+            HORIZON_VERTICAL_MARGIN: 200
         };
         
         // Position for scrolling effect
@@ -98,8 +94,39 @@ export default class ShooterScene extends Phaser.Scene {
         console.log('[ShooterScene] M7-style ground with track created');
     }
     
+    createM7Player(width, height) {
+        console.log('[ShooterScene] Creating M7-style player (two rectangles)');
+        
+        // Player object with M7 control system
+        this.player = {
+            // Main (larger) rectangle
+            x: width / 2,
+            y: height * 0.45,   // Position at 45% from top (above horizon)
+            size: Math.min(width, height) * 0.15,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 64,
+            moveSpeed: 64,
+            acceleration: 4.0,
+            deceleration: 1.6,
+            worldX: 0,
+            worldY: 0,
+            
+            // Leading (smaller) rectangle
+            leader: {
+                x: width / 2,
+                y: height * 0.45,
+                size: Math.min(width, height) * 0.06,
+                maxDistance: 320,
+                moveSpeed: 96
+            }
+        };
+        
+        console.log('[ShooterScene] M7 player created');
+    }
+    
     updateGround(time) {
-        if (!this.groundGraphics || !this.groundConfig) return;
+        if (!this.groundGraphics || !this.groundConfig || !this.player) return;
         
         const config = this.groundConfig;
         const { horizonY, width, height } = config;
@@ -107,126 +134,168 @@ export default class ShooterScene extends Phaser.Scene {
         // Update scroll offset for forward movement
         this.scrollOffset = (this.scrollOffset + 2) % 100;
         
+        // Calculate vertical movement compensation (M7 style)
+        const verticalMovement = (this.player.y - (height * 0.45)) / (height * 0.45);
+        const horizonOffset = -verticalMovement * config.HORIZON_VERTICAL_MARGIN;
+        const compensatedHorizon = horizonY + horizonOffset;
+        
+        // Update horizon tilt based on movement (M7 style)
+        const targetTilt = (this.player.leader.x - this.player.x) / this.player.leader.maxDistance * -config.MAX_HORIZON_TILT;
+        this.horizonTilt = Phaser.Math.Linear(this.horizonTilt, targetTilt, 0.2);
+        
+        // Calculate tilted horizon points
+        const horizonPoints = [];
+        for (let x = 0; x <= width; x += config.SCANLINE_SPACING) {
+            const xProgress = (x - width / 2) / (width / 2);
+            const y = compensatedHorizon + Math.sin(this.horizonTilt) * (width / 2) * xProgress;
+            horizonPoints.push({ x, y });
+        }
+        
         // Clear and redraw
         this.groundGraphics.clear();
         
-        // Draw sky
-        this.groundGraphics.fillStyle(0x87CEEB); // Light blue sky
-        this.groundGraphics.fillRect(0, 0, width, horizonY);
-        
-        // Draw horizon line
-        this.groundGraphics.lineStyle(2, 0xFF0000);
+        // Draw tilted sky (M7 style)
+        this.groundGraphics.fillStyle(0x87CEEB);
         this.groundGraphics.beginPath();
-        this.groundGraphics.moveTo(0, horizonY);
-        this.groundGraphics.lineTo(width, horizonY);
-        this.groundGraphics.strokePath();
+        this.groundGraphics.moveTo(0, 0);
+        this.groundGraphics.lineTo(width, 0);
+        this.groundGraphics.lineTo(width, horizonPoints[horizonPoints.length - 1].y);
+        this.groundGraphics.lineTo(0, horizonPoints[0].y);
+        this.groundGraphics.closePath();
+        this.groundGraphics.fill();
         
-        // Draw ground using scanlines (M7 style)
-        for (let screenY = Math.floor(horizonY); screenY < height; screenY += config.SCANLINE_SPACING) {
-            const distanceFromHorizon = screenY - horizonY;
-            if (distanceFromHorizon <= 0) continue;
+        // Pre-calculate tilt factors
+        const tiltAngle = this.horizonTilt;
+        const cosTheta = Math.cos(tiltAngle);
+        const sinTheta = Math.sin(tiltAngle);
+        
+        // Draw ground from tilted horizon using M7 algorithm
+        for (let i = 0; i < horizonPoints.length - 1; i++) {
+            const startX = horizonPoints[i].x;
+            const endX = horizonPoints[i + 1].x;
+            const startY = horizonPoints[i].y;
             
-            // Calculate perspective
-            const z = (distanceFromHorizon * config.baseScale) + this.position.z;
-            const scaleLine = config.cameraHeight / distanceFromHorizon * config.PERSPECTIVE_SCALE;
-            
-            // Draw scanline
-            for (let screenX = 0; screenX < width; screenX += config.SCANLINE_SPACING) {
-                // Calculate world position
-                let worldX = (screenX - width / 2) * scaleLine;
-                let worldY = z;
+            for (let screenY = Math.floor(startY); screenY < height; screenY += config.SCANLINE_SPACING) {
+                const distanceFromHorizon = screenY - startY;
+                if (distanceFromHorizon <= 0) continue;
                 
-                let finalX = worldX - this.position.x;
-                let finalY = worldY - this.position.y;
+                // Calculate perspective
+                const z = (distanceFromHorizon * config.baseScale) + this.position.z;
+                const scaleLine = config.cameraHeight / distanceFromHorizon * config.PERSPECTIVE_SCALE;
                 
-                const adjustedY = finalY + this.scrollOffset;
+                // Calculate tilt offset for this scanline
+                const verticalProgress = (screenY - compensatedHorizon) / (height - compensatedHorizon);
+                const xOffset = Math.sin(this.horizonTilt) * (width / 2) * verticalProgress;
                 
-                // Calculate distance from track center
-                const distanceFromCenter = Math.abs(finalX);
-                
-                // Determine if pixel is on track
-                const isOnTrack = distanceFromCenter < config.TRACK_WIDTH / 2;
-                const isOnBorder = distanceFromCenter >= (config.TRACK_WIDTH / 2 - config.TRACK_BORDER_WIDTH) && 
-                                 distanceFromCenter <= config.TRACK_WIDTH / 2;
-                const isOnCenterLine = Math.abs(distanceFromCenter) < config.TRACK_CENTER_LINE_WIDTH / 2;
-                
-                // Calculate dashed center line pattern
-                const dashPattern = Math.floor(adjustedY / config.TRACK_PATTERN_LENGTH) % 2 === 0;
-                
-                // Set color
-                if (isOnBorder) {
-                    this.groundGraphics.fillStyle(config.TRACK_BORDER_COLOR);
-                } else if (isOnCenterLine && dashPattern) {
-                    this.groundGraphics.fillStyle(config.TRACK_CENTER_COLOR);
-                } else if (isOnTrack) {
-                    this.groundGraphics.fillStyle(config.TRACK_COLOR);
-                } else {
-                    // Green gradient for off-track areas
-                    const gradientProgress = Math.min(1, distanceFromHorizon / (height - horizonY) * config.GRADIENT_INTENSITY);
+                // Draw segment
+                for (let screenX = startX; screenX < endX; screenX += config.SCANLINE_SPACING) {
+                    const xProgress = (screenX - width / 2) / (width / 2);
                     
-                    const r = Math.floor(((config.GROUND_COLOR_NEAR >> 16) & 0xFF) * (1 - gradientProgress) + 
-                                        ((config.GROUND_COLOR_FAR >> 16) & 0xFF) * gradientProgress);
-                    const g = Math.floor(((config.GROUND_COLOR_NEAR >> 8) & 0xFF) * (1 - gradientProgress) + 
-                                        ((config.GROUND_COLOR_FAR >> 8) & 0xFF) * gradientProgress);
-                    const b = Math.floor((config.GROUND_COLOR_NEAR & 0xFF) * (1 - gradientProgress) + 
-                                        (config.GROUND_COLOR_FAR & 0xFF) * gradientProgress);
+                    // Apply horizon tilt to world coordinates
+                    let worldX = (screenX - width / 2 - xOffset * xProgress) * scaleLine;
+                    let worldY = z;
                     
-                    const color = (r << 16) | (g << 8) | b;
-                    this.groundGraphics.fillStyle(color);
+                    // Apply rotation and tilt transformation
+                    let tiltedX = worldX * cosTheta - worldY * sinTheta;
+                    let tiltedY = worldX * sinTheta + worldY * cosTheta;
+                    
+                    let rotatedX = tiltedX * Math.cos(this.angle) - tiltedY * Math.sin(this.angle);
+                    let rotatedY = tiltedX * Math.sin(this.angle) + tiltedY * Math.cos(this.angle);
+                    
+                    let finalX = rotatedX - this.position.x;
+                    let finalY = rotatedY - this.position.y;
+                    
+                    const adjustedY = finalY + this.scrollOffset;
+                    
+                    // Calculate distance from track center
+                    const distanceFromCenter = Math.abs(finalX);
+                    
+                    // Determine if pixel is on track
+                    const isOnTrack = distanceFromCenter < config.TRACK_WIDTH / 2;
+                    const isOnBorder = distanceFromCenter >= (config.TRACK_WIDTH / 2 - config.TRACK_BORDER_WIDTH) && 
+                                     distanceFromCenter <= config.TRACK_WIDTH / 2;
+                    const isOnCenterLine = Math.abs(distanceFromCenter) < config.TRACK_CENTER_LINE_WIDTH / 2;
+                    
+                    // Calculate dashed center line pattern
+                    const dashPattern = Math.floor(adjustedY / config.TRACK_PATTERN_LENGTH) % 2 === 0;
+                    
+                    // Set color
+                    if (isOnBorder) {
+                        this.groundGraphics.fillStyle(config.TRACK_BORDER_COLOR);
+                    } else if (isOnCenterLine && dashPattern) {
+                        this.groundGraphics.fillStyle(config.TRACK_CENTER_COLOR);
+                    } else if (isOnTrack) {
+                        this.groundGraphics.fillStyle(config.TRACK_COLOR);
+                    } else {
+                        // Green gradient for off-track areas
+                        const gradientProgress = Math.min(1, distanceFromHorizon / (height - compensatedHorizon) * config.GRADIENT_INTENSITY);
+                        
+                        const r = Math.floor(((config.GROUND_COLOR_NEAR >> 16) & 0xFF) * (1 - gradientProgress) + 
+                                            ((config.GROUND_COLOR_FAR >> 16) & 0xFF) * gradientProgress);
+                        const g = Math.floor(((config.GROUND_COLOR_NEAR >> 8) & 0xFF) * (1 - gradientProgress) + 
+                                            ((config.GROUND_COLOR_FAR >> 8) & 0xFF) * gradientProgress);
+                        const b = Math.floor((config.GROUND_COLOR_NEAR & 0xFF) * (1 - gradientProgress) + 
+                                            (config.GROUND_COLOR_FAR & 0xFF) * gradientProgress);
+                        
+                        const color = (r << 16) | (g << 8) | b;
+                        this.groundGraphics.fillStyle(color);
+                    }
+                    
+                    this.groundGraphics.fillRect(screenX, screenY, config.SCANLINE_SPACING, config.SCANLINE_SPACING);
                 }
-                
-                this.groundGraphics.fillRect(screenX, screenY, config.SCANLINE_SPACING, config.SCANLINE_SPACING);
             }
         }
-    }
-    
-    createPlayerShip(width, height) {
-        console.log('[ShooterScene] Creating player ship');
         
-        // Player ship (red triangle pointing up)
-        const shipX = width / 2;
-        const shipY = height - 150;
-        
-        this.playerShip = this.add.triangle(
-            shipX,
-            shipY,
-            0, 40,    // Bottom left
-            20, 0,    // Top
-            40, 40,   // Bottom right
-            0xFF0000
-        );
-        
-        this.physics.add.existing(this.playerShip);
-        this.playerShip.body.setCollideWorldBounds(true);
-        this.playerShip.body.setSize(40, 40);
-        this.playerShip.setDepth(100);
-        
-        // Player properties
-        this.playerShip.health = 100;
-        this.playerShip.maxHealth = 100;
-        this.playerShip.moveSpeed = 400;
-        
-        // Shooting properties
-        this.canShoot = true;
-        this.shootCooldown = 200; // ms
-        
-        console.log('[ShooterScene] Player ship created');
+        // Draw tilted horizon line
+        this.groundGraphics.lineStyle(2, 0xFF0000);
+        this.groundGraphics.beginPath();
+        this.groundGraphics.moveTo(0, horizonPoints[0].y);
+        this.groundGraphics.lineTo(width, horizonPoints[horizonPoints.length - 1].y);
+        this.groundGraphics.strokePath();
     }
     
     setupInput() {
-        // WASD movement
+        // WASD movement (M7 style)
         this.wasdKeys = this.input.keyboard.addKeys({
-            up: 'W',
-            down: 'S',
-            left: 'A',
-            right: 'D'
+            W: Phaser.Input.Keyboard.KeyCodes.W,
+            S: Phaser.Input.Keyboard.KeyCodes.S,
+            A: Phaser.Input.Keyboard.KeyCodes.A,
+            D: Phaser.Input.Keyboard.KeyCodes.D
         });
-        
-        // U key to shoot
-        this.shootKey = this.input.keyboard.addKey('U');
         
         // ESC to exit early
         this.escapeKey = this.input.keyboard.addKey('ESC');
+    }
+    
+    drawPlayer(graphics) {
+        if (!this.player) return;
+        
+        // Draw leading (smaller) rectangle - Yellow
+        graphics.lineStyle(2, 0xFFFF00);
+        graphics.fillStyle(0xFFFF00, 0.7);
+        graphics.fillRect(
+            this.player.leader.x - this.player.leader.size/2,
+            this.player.leader.y - this.player.leader.size/2,
+            this.player.leader.size,
+            this.player.leader.size
+        );
+        
+        // Draw main (larger) rectangle - Red
+        graphics.lineStyle(2, 0xFF0000);
+        graphics.fillStyle(0xFF0000, 1.0);
+        graphics.fillRect(
+            this.player.x - this.player.size/2,
+            this.player.y - this.player.size/2,
+            this.player.size,
+            this.player.size
+        );
+        
+        // Draw line connecting the rectangles
+        graphics.lineStyle(1, 0xFFFFFF, 0.5);
+        graphics.beginPath();
+        graphics.moveTo(this.player.x, this.player.y);
+        graphics.lineTo(this.player.leader.x, this.player.leader.y);
+        graphics.strokePath();
     }
     
     createHUD(width, height) {
@@ -244,77 +313,40 @@ export default class ShooterScene extends Phaser.Scene {
             }
         ).setOrigin(0.5, 0).setDepth(200);
         
-        // Score
-        this.scoreText = this.add.text(
+        // Instructions
+        this.instructionText = this.add.text(
             20,
             20,
-            'SCORE: 0',
+            'WASD: Move | ESC: Exit',
             {
-                fontSize: '20px',
-                fontFamily: 'Arial',
-                color: '#FFD700',
-                stroke: '#000000',
-                strokeThickness: 3
-            }
-        ).setDepth(200);
-        
-        // Health bar
-        this.healthBarBg = this.add.rectangle(
-            width - 120,
-            20,
-            100,
-            15,
-            0x333333
-        ).setOrigin(0, 0).setDepth(200);
-        
-        this.healthBar = this.add.rectangle(
-            width - 120,
-            20,
-            100,
-            15,
-            0x00FF00
-        ).setOrigin(0, 0).setDepth(201);
-        
-        this.healthText = this.add.text(
-            width - 70,
-            27,
-            'HP',
-            {
-                fontSize: '14px',
+                fontSize: '16px',
                 fontFamily: 'Arial',
                 color: '#FFFFFF',
                 stroke: '#000000',
                 strokeThickness: 2
             }
-        ).setOrigin(0.5).setDepth(202);
+        ).setDepth(200);
     }
     
     update(time, delta) {
-        if (!this.playerShip || !this.playerShip.active) return;
+        if (!this.player) return;
         
-        // Update ground (M7 style with track)
+        // Handle M7-style player input
+        this.handlePlayerInput();
+        
+        // Update ground (M7 style with tilting horizon)
         this.updateGround(time);
         
-        // Handle player movement
-        this.handlePlayerMovement();
+        // Create new graphics for this frame
+        if (!this.playerGraphics) {
+            this.playerGraphics = this.add.graphics();
+            this.playerGraphics.setDepth(1000);
+        } else {
+            this.playerGraphics.clear();
+        }
         
-        // Handle shooting
-        this.handleShooting();
-        
-        // Update projectiles
-        this.updateProjectiles();
-        
-        // Spawn enemies
-        this.spawnEnemies(time);
-        
-        // Update enemies
-        this.updateEnemies();
-        
-        // Update enemy projectiles
-        this.updateEnemyProjectiles();
-        
-        // Check collisions
-        this.checkCollisions();
+        // Draw player (M7 style two rectangles)
+        this.drawPlayer(this.playerGraphics);
         
         // Update HUD
         this.updateHUD(time);
@@ -328,197 +360,77 @@ export default class ShooterScene extends Phaser.Scene {
         }
     }
     
-    handlePlayerMovement() {
-        if (!this.playerShip || !this.playerShip.body) return;
+    handlePlayerInput() {
+        if (!this.player) return;
         
-        const body = this.playerShip.body;
+        const width = this.cameras.main.width;
+        const height = this.cameras.main.height;
         
-        // Reset velocity
-        body.setVelocity(0, 0);
+        let dx = 0;
+        let dy = 0;
         
-        // WASD movement
-        if (this.wasdKeys.left.isDown) {
-            body.setVelocityX(-this.playerShip.moveSpeed);
-        } else if (this.wasdKeys.right.isDown) {
-            body.setVelocityX(this.playerShip.moveSpeed);
+        // Calculate movement direction for leader (M7 style)
+        if (this.wasdKeys.W.isDown) {
+            dy = -1;
+        }
+        if (this.wasdKeys.S.isDown) {
+            dy = 1;
+        }
+        if (this.wasdKeys.A.isDown) {
+            dx = -1;
+        }
+        if (this.wasdKeys.D.isDown) {
+            dx = 1;
         }
         
-        if (this.wasdKeys.up.isDown) {
-            body.setVelocityY(-this.playerShip.moveSpeed);
-        } else if (this.wasdKeys.down.isDown) {
-            body.setVelocityY(this.playerShip.moveSpeed);
+        // Move leader
+        if (dx !== 0 || dy !== 0) {
+            // Normalize diagonal movement
+            const length = Math.sqrt(dx * dx + dy * dy);
+            dx = dx / length;
+            dy = dy / length;
+            
+            // Normal movement
+            this.player.leader.x += dx * this.player.leader.moveSpeed;
+            this.player.leader.y += dy * this.player.leader.moveSpeed;
+            
+            // Calculate angle based on movement direction
+            this.player.angle = Math.atan2(dy, dx);
         }
-    }
-    
-    handleShooting() {
-        if (Phaser.Input.Keyboard.JustDown(this.shootKey) && this.canShoot) {
-            this.shootProjectile();
-            this.canShoot = false;
-            
-            this.time.delayedCall(this.shootCooldown, () => {
-                this.canShoot = true;
-            });
+        
+        // Keep leader within maximum distance of main rectangle
+        const deltaX = this.player.leader.x - this.player.x;
+        const deltaY = this.player.leader.y - this.player.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        if (distance > this.player.leader.maxDistance) {
+            const angle = Math.atan2(deltaY, deltaX);
+            this.player.leader.x = this.player.x + Math.cos(angle) * this.player.leader.maxDistance;
+            this.player.leader.y = this.player.y + Math.sin(angle) * this.player.leader.maxDistance;
         }
-    }
-    
-    shootProjectile() {
-        if (!this.playerShip) return;
         
-        const projectile = this.add.rectangle(
-            this.playerShip.x,
-            this.playerShip.y - 30,
-            8,
-            20,
-            0xFFFF00
-        );
-        
-        this.physics.add.existing(projectile);
-        projectile.body.setAllowGravity(false);
-        projectile.body.setVelocityY(-600);
-        projectile.setDepth(50);
-        
-        this.projectiles.push(projectile);
-    }
-    
-    updateProjectiles() {
-        this.projectiles = this.projectiles.filter(projectile => {
-            if (!projectile.active || projectile.y < -50) {
-                projectile.destroy();
-                return false;
-            }
-            return true;
-        });
-    }
-    
-    spawnEnemies(time) {
-        if (time - this.lastEnemySpawn > this.enemySpawnInterval) {
-            this.lastEnemySpawn = time;
-            
-            const width = this.cameras.main.width;
-            const enemyX = Phaser.Math.Between(50, width - 50);
-            
-            // Create enemy (red square)
-            const enemy = this.add.rectangle(
-                enemyX,
-                -50,
-                30,
-                30,
-                0xFF4444
-            );
-            
-            this.physics.add.existing(enemy);
-            enemy.body.setAllowGravity(false);
-            enemy.body.setVelocityY(150 + Math.random() * 100);
-            enemy.setDepth(50);
-            
-            enemy.health = 30;
-            enemy.lastShot = 0;
-            
-            this.enemies.push(enemy);
+        // Move main rectangle towards leader
+        if (distance > 5) {
+            const angle = Math.atan2(deltaY, deltaX);
+            this.player.x += Math.cos(angle) * this.player.moveSpeed * (distance / this.player.leader.maxDistance);
+            this.player.y += Math.sin(angle) * this.player.moveSpeed * (distance / this.player.leader.maxDistance);
         }
-    }
-    
-    updateEnemies() {
-        this.enemies = this.enemies.filter(enemy => {
-            if (!enemy.active || enemy.y > this.cameras.main.height + 50) {
-                enemy.destroy();
-                return false;
-            }
-            
-            // Enemy shooting
-            const now = this.time.now;
-            if (now - enemy.lastShot > 2000) {
-                enemy.lastShot = now;
-                this.enemyShoot(enemy);
-            }
-            
-            return true;
-        });
-    }
-    
-    enemyShoot(enemy) {
-        if (!this.playerShip) return;
         
-        const projectile = this.add.rectangle(
-            enemy.x,
-            enemy.y + 20,
-            6,
-            15,
-            0xFF0000
-        );
+        // Calculate viewport margins based on player size
+        const viewportMargin = this.player.size * 1.5;
         
-        this.physics.add.existing(projectile);
-        projectile.body.setAllowGravity(false);
+        // Keep both rectangles on screen with margin
+        this.player.x = Phaser.Math.Clamp(this.player.x, viewportMargin, width - viewportMargin);
+        this.player.y = Phaser.Math.Clamp(this.player.y, viewportMargin, height - viewportMargin);
+        this.player.leader.x = Phaser.Math.Clamp(this.player.leader.x, viewportMargin, width - viewportMargin);
+        this.player.leader.y = Phaser.Math.Clamp(this.player.leader.y, viewportMargin, height - viewportMargin);
         
-        // Aim at player
-        const angle = Phaser.Math.Angle.Between(
-            enemy.x, enemy.y,
-            this.playerShip.x, this.playerShip.y
-        );
-        
-        const speed = 300;
-        projectile.body.setVelocity(
-            Math.cos(angle) * speed,
-            Math.sin(angle) * speed
-        );
-        projectile.setDepth(50);
-        
-        this.enemyProjectiles.push(projectile);
-    }
-    
-    updateEnemyProjectiles() {
-        this.enemyProjectiles = this.enemyProjectiles.filter(projectile => {
-            const height = this.cameras.main.height;
-            const width = this.cameras.main.width;
-            
-            if (!projectile.active || 
-                projectile.y < -50 || projectile.y > height + 50 ||
-                projectile.x < -50 || projectile.x > width + 50) {
-                projectile.destroy();
-                return false;
-            }
-            return true;
-        });
-    }
-    
-    checkCollisions() {
-        // Player projectiles vs enemies
-        this.projectiles.forEach(projectile => {
-            this.enemies.forEach(enemy => {
-                if (this.physics.overlap(projectile, enemy)) {
-                    enemy.health -= 10;
-                    projectile.destroy();
-                    this.projectiles = this.projectiles.filter(p => p !== projectile);
-                    
-                    if (enemy.health <= 0) {
-                        enemy.destroy();
-                        this.enemies = this.enemies.filter(e => e !== enemy);
-                        this.score += 100;
-                    }
-                }
-            });
-        });
-        
-        // Enemy projectiles vs player
-        this.enemyProjectiles.forEach(projectile => {
-            if (this.playerShip && this.physics.overlap(projectile, this.playerShip)) {
-                this.playerShip.health -= 10;
-                projectile.destroy();
-                this.enemyProjectiles = this.enemyProjectiles.filter(p => p !== projectile);
-                
-                // Flash player red
-                this.playerShip.setFillStyle(0xFFFFFF);
-                this.time.delayedCall(100, () => {
-                    if (this.playerShip) {
-                        this.playerShip.setFillStyle(0xFF0000);
-                    }
-                });
-                
-                if (this.playerShip.health <= 0) {
-                    this.handlePlayerDefeat();
-                }
-            }
-        });
+        // Update world position based on leader's movement
+        if (distance > 0) {
+            const moveAngle = Math.atan2(deltaY, deltaX);
+            this.position.x -= Math.cos(moveAngle) * (distance / this.player.leader.maxDistance) * this.player.maxSpeed;
+            this.position.y -= Math.sin(moveAngle) * (distance / this.player.leader.maxDistance) * this.player.maxSpeed;
+        }
     }
     
     updateHUD(time) {
@@ -526,24 +438,6 @@ export default class ShooterScene extends Phaser.Scene {
         const elapsed = time - this.startTime;
         const remaining = Math.max(0, Math.ceil((this.timeLimit - elapsed) / 1000));
         this.timeText.setText(`TIME: ${remaining}`);
-        
-        // Update score
-        this.scoreText.setText(`SCORE: ${this.score}`);
-        
-        // Update health bar
-        if (this.playerShip) {
-            const healthPercent = this.playerShip.health / this.playerShip.maxHealth;
-            this.healthBar.width = 100 * healthPercent;
-            
-            // Change color based on health
-            if (healthPercent > 0.5) {
-                this.healthBar.setFillStyle(0x00FF00);
-            } else if (healthPercent > 0.25) {
-                this.healthBar.setFillStyle(0xFFFF00);
-            } else {
-                this.healthBar.setFillStyle(0xFF0000);
-            }
-        }
     }
     
     checkTimeLimit(time) {
@@ -555,16 +449,16 @@ export default class ShooterScene extends Phaser.Scene {
     }
     
     handleSuccess() {
-        console.log('[ShooterScene] Mission complete!');
+        console.log('[ShooterScene] Time limit reached!');
         
-        // Show success message
+        // Show completion message
         const centerX = this.cameras.main.width / 2;
         const centerY = this.cameras.main.height / 2;
         
         const successText = this.add.text(
             centerX,
             centerY,
-            `MISSION COMPLETE!\nSCORE: ${this.score}`,
+            'TIME COMPLETE!',
             {
                 fontSize: '48px',
                 fontFamily: 'Arial',
@@ -581,43 +475,16 @@ export default class ShooterScene extends Phaser.Scene {
         });
     }
     
-    handlePlayerDefeat() {
-        console.log('[ShooterScene] Player defeated');
-        
-        if (this.playerShip) {
-            this.playerShip.destroy();
-            this.playerShip = null;
-        }
-        
-        const centerX = this.cameras.main.width / 2;
-        const centerY = this.cameras.main.height / 2;
-        
-        const defeatText = this.add.text(
-            centerX,
-            centerY,
-            'DEFEATED!',
-            {
-                fontSize: '64px',
-                fontFamily: 'Arial',
-                color: '#FF0000',
-                stroke: '#000000',
-                strokeThickness: 8
-            }
-        ).setOrigin(0.5).setDepth(300);
-        
-        // Return after delay
-        this.time.delayedCall(3000, () => {
-            this.exitShooterScene();
-        });
-    }
-    
     exitShooterScene() {
         console.log('[ShooterScene] Exiting to WorldScene');
         
-        // Clean up
-        this.enemies.forEach(e => e.destroy());
-        this.projectiles.forEach(p => p.destroy());
-        this.enemyProjectiles.forEach(p => p.destroy());
+        // Clean up graphics
+        if (this.groundGraphics) {
+            this.groundGraphics.destroy();
+        }
+        if (this.playerGraphics) {
+            this.playerGraphics.destroy();
+        }
         
         // Return to WorldScene
         this.scene.stop();
