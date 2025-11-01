@@ -316,13 +316,31 @@ export default class ShooterScene extends Phaser.Scene {
         
         // Draw extended aim line to cursor (shows 3D aiming)
         if (this.cursor) {
+            // Draw dashed line manually (Phaser Graphics doesn't have setLineDash)
+            const dx = this.cursor.x - this.player.leader.x;
+            const dy = this.cursor.y - this.player.leader.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const dashLength = 10;
+            const gapLength = 5;
+            const segmentLength = dashLength + gapLength;
+            const numSegments = Math.floor(distance / segmentLength);
+            
             graphics.lineStyle(1, 0x00FFFF, 0.4);
-            graphics.setLineDash([5, 5]); // Dashed line
-            graphics.beginPath();
-            graphics.moveTo(this.player.leader.x, this.player.leader.y);
-            graphics.lineTo(this.cursor.x, this.cursor.y);
-            graphics.strokePath();
-            graphics.setLineDash([]); // Reset dash
+            
+            for (let i = 0; i < numSegments; i++) {
+                const t1 = (i * segmentLength) / distance;
+                const t2 = Math.min(((i * segmentLength) + dashLength) / distance, 1);
+                
+                const x1 = this.player.leader.x + dx * t1;
+                const y1 = this.player.leader.y + dy * t1;
+                const x2 = this.player.leader.x + dx * t2;
+                const y2 = this.player.leader.y + dy * t2;
+                
+                graphics.beginPath();
+                graphics.moveTo(x1, y1);
+                graphics.lineTo(x2, y2);
+                graphics.strokePath();
+            }
         }
     }
     
