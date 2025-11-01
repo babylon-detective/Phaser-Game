@@ -537,12 +537,16 @@ export default class MenuScene extends Phaser.Scene {
             
             partyMembers.forEach((member, index) => {
                 const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+                const isDowned = member.isDowned || member.stats.health <= 0;
+                const healthColor = isDowned ? '#ff4444' : '#00ff00';
+                const memberOpacity = isDowned ? 0.5 : 1.0;
                 
                 contentHTML += `
-                    <div style="margin-bottom: 12px; padding: 10px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 1px solid ${colorHex}; border-radius: 8px;">
+                    <div style="margin-bottom: 12px; padding: 10px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 1px solid ${colorHex}; border-radius: 8px; opacity: ${memberOpacity};">
                         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                             <div style="width: 12px; height: 12px; background: ${colorHex}; border-radius: 3px;"></div>
                             <div style="font-size: 16px; font-weight: bold; color: ${colorHex};">${member.name.toUpperCase()}</div>
+                            ${isDowned ? '<span style="color: #ff4444; font-size: 12px; margin-left: 8px; font-weight: bold;">⚠️ DOWNED</span>' : ''}
                         </div>
                         
                         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -552,7 +556,7 @@ export default class MenuScene extends Phaser.Scene {
                         
                         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
                             <span style="color: #AAA;">Health:</span>
-                            <span style="color: #00ff00; font-weight: bold;">${member.stats.health}</span>
+                            <span style="color: ${healthColor}; font-weight: bold;">${member.stats.health}</span>
                         </div>
 
                         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
