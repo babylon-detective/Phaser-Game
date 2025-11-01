@@ -52,6 +52,10 @@ export default class BattleScene extends Phaser.Scene {
         this.characterSwitchDelay = 300; // ms between switches
         this.groupMovementMode = true; // true = all move together (key 0), false = individual control (keys 1-4)
         
+        // Defeat System
+        this.isPlayerDowned = false; // Track if player is downed
+        this.playerDownedText = null; // Visual "DOWNED" indicator for player
+        
         // Face Button Controls (U/I/O/P for each character)
         this.faceButtons = {
             u: null, // Character 1 ability
@@ -1845,6 +1849,9 @@ export default class BattleScene extends Phaser.Scene {
 
         console.log('[BattleScene] Returning to world');
         
+        // Get updated HP states for all party members
+        const hpStates = this.getUpdatedPartyHPStates();
+        
         // Save player health before leaving battle
         gameStateManager.updatePlayerHealth(this.currentHP);
         console.log(`[BattleScene] Saved player health on escape: ${this.currentHP}/${this.maxHP}`);
@@ -1857,6 +1864,7 @@ export default class BattleScene extends Phaser.Scene {
         }));
         
         console.log('[BattleScene] NPC health on escape:', updatedNpcHealth);
+        console.log('[BattleScene] Party HP states on escape:', hpStates);
         
         // Clean up all game objects and physics
         this.cleanup();
@@ -1873,12 +1881,13 @@ export default class BattleScene extends Phaser.Scene {
             duration: 500,
             ease: 'Power2',
             onComplete: () => {
-                // Resume WorldScene with transition state AND updated NPC health
+                // Resume WorldScene with transition state AND updated NPC health AND party HP states
                 this.scene.resume('WorldScene', { 
                     battleVictory: false,
                     returnPosition: this.worldPosition,
                     transitionType: 'escape',
-                    updatedNpcHealth: updatedNpcHealth
+                    updatedNpcHealth: updatedNpcHealth,
+                    partyHPStates: hpStates
                 });
                 this.scene.stop();
             }
@@ -2003,32 +2012,52 @@ export default class BattleScene extends Phaser.Scene {
         
         if (!this.isDashing && this.isPlayerTurn && this.currentAP > 0) {
             if (this.groupMovementMode) {
-                // GROUP MOVEMENT MODE (key 0): All characters move together
+                // GROUP MOVEMENT MODE (key 0): All characters move together (except downed)
                 if (moveLeft) {
                     console.log('[BattleScene] Group movement - Left');
-                    this.player.body.setVelocityX(-300);
+                    // Move player if not downed
+                    if (!this.isPlayerDowned) {
+                        this.player.body.setVelocityX(-300);
+                    }
+                    // Move party members if not downed
                     this.partyCharacters.forEach(char => {
-                        if (char.body) char.body.setVelocityX(-300);
+                        if (char.body && (!char.memberData || !char.memberData.isDowned)) {
+                            char.body.setVelocityX(-300);
+                        }
                     });
                     this.isMoving = true;
                 } else if (moveRight) {
                     console.log('[BattleScene] Group movement - Right');
-                    this.player.body.setVelocityX(300);
+                    // Move player if not downed
+                    if (!this.isPlayerDowned) {
+                        this.player.body.setVelocityX(300);
+                    }
+                    // Move party members if not downed
                     this.partyCharacters.forEach(char => {
-                        if (char.body) char.body.setVelocityX(300);
+                        if (char.body && (!char.memberData || !char.memberData.isDowned)) {
+                            char.body.setVelocityX(300);
+                        }
                     });
                     this.isMoving = true;
                 } else {
-                    this.player.body.setVelocityX(0);
+                    // Stop all characters
+                    if (!this.isPlayerDowned) {
+                        this.player.body.setVelocityX(0);
+                    }
                     this.partyCharacters.forEach(char => {
-                        if (char.body) char.body.setVelocityX(0);
+                        if (char.body && (!char.memberData || !char.memberData.isDowned)) {
+                            char.body.setVelocityX(0);
+                        }
                     });
                     this.isMoving = false;
                 }
             } else {
-                // INDIVIDUAL CHARACTER CONTROL MODE (keys 1-4): Only selected character moves
+                // INDIVIDUAL CHARACTER CONTROL MODE (keys 1-4): Only selected character moves (if not downed)
                 const activeChar = this.getActiveCharacterObject();
-                if (activeChar && activeChar.body) {
+                const isActiveCharDowned = (activeChar === this.player && this.isPlayerDowned) || 
+                                          (activeChar !== this.player && activeChar.memberData?.isDowned);
+                
+                if (activeChar && activeChar.body && !isActiveCharDowned) {
                     if (moveLeft) {
                         console.log('[BattleScene] Individual movement - Left (char', this.activeCharacterIndex, ')');
                         activeChar.body.setVelocityX(-300);
@@ -2417,16 +2446,90 @@ export default class BattleScene extends Phaser.Scene {
         });
     }
     
-    handlePlayerDefeat() {
-        console.log('[BattleScene] Player has been defeated!');
+    handleCharacterDowned(character, isPlayer = false) {
+        const characterName = isPlayer ? 'Player' : (character.memberData?.name || 'Character');
+        console.log(`[BattleScene] ${characterName} has been downed!`);
         
-        // Stop all player actions
-        this.isPlayerTurn = false;
-        
-        // Stop player movement
-        if (this.player && this.player.body) {
-            this.player.body.setVelocity(0, 0);
+        // Mark as downed
+        if (isPlayer) {
+            this.isPlayerDowned = true;
+        } else if (character.memberData) {
+            character.memberData.isDowned = true;
         }
+        
+        // Visual feedback: 50% opacity and immobile
+        character.setAlpha(0.5);
+        
+        // Stop movement
+        if (character.body) {
+            character.body.setVelocity(0, 0);
+            character.body.setImmovable(true);
+        }
+        
+        // Display "DOWNED" text above character
+        const downedText = this.add.text(
+            character.x,
+            character.y - 60,
+            'DOWNED',
+            {
+                fontSize: '16px',
+                fontFamily: 'Arial',
+                color: '#ff4444',
+                stroke: '#000000',
+                strokeThickness: 3,
+                fontStyle: 'bold'
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        
+        this.tweens.add({
+            targets: downedText,
+            alpha: 1,
+            y: character.y - 70,
+            duration: 500,
+            ease: 'Power2'
+        });
+        
+        // Store text reference for cleanup
+        if (isPlayer) {
+            this.playerDownedText = downedText;
+        } else if (character.memberData) {
+            character.memberData.downedText = downedText;
+        }
+        
+        // Check if entire party is defeated
+        this.checkPartyDefeat();
+    }
+    
+    checkPartyDefeat() {
+        console.log('[BattleScene] Checking party defeat status...');
+        
+        // Count alive party members (including player)
+        let aliveCount = this.isPlayerDowned ? 0 : 1;
+        
+        if (this.partyCharacters && this.partyCharacters.length > 0) {
+            this.partyCharacters.forEach(character => {
+                if (character.active && character.memberData && !character.memberData.isDowned) {
+                    aliveCount++;
+                }
+            });
+        }
+        
+        console.log(`[BattleScene] Alive party members: ${aliveCount}`);
+        
+        if (aliveCount === 0) {
+            // All party members defeated - trigger game over
+            this.handlePartyDefeat();
+        } else {
+            console.log(`[BattleScene] Battle continues with ${aliveCount} alive member(s)`);
+        }
+    }
+    
+    handlePartyDefeat() {
+        console.log('[BattleScene] ========== PARTY DEFEATED ==========');
+        console.log('[BattleScene] All party members have been downed!');
+        
+        // Stop all actions
+        this.isPlayerTurn = false;
         
         // Stop all NPC movement
         if (this.npcMovementData) {
@@ -2438,19 +2541,11 @@ export default class BattleScene extends Phaser.Scene {
             });
         }
         
-        // Fade out player
-        this.tweens.add({
-            targets: this.player,
-            alpha: 0,
-            duration: 1000,
-            ease: 'Power2'
-        });
-        
         // Display defeat message
         const defeatText = this.add.text(
             this.cameras.main.centerX,
             this.cameras.main.centerY - 100,
-            'DEFEATED',
+            'PARTY DEFEATED',
             {
                 fontSize: '64px',
                 fontFamily: 'Arial',
@@ -2461,6 +2556,8 @@ export default class BattleScene extends Phaser.Scene {
             }
         ).setOrigin(0.5).setAlpha(0);
         
+        defeatText.setDepth(10000);
+        
         this.tweens.add({
             targets: defeatText,
             alpha: 1,
@@ -2468,12 +2565,42 @@ export default class BattleScene extends Phaser.Scene {
             ease: 'Power2'
         });
         
-        // Return to world scene after delay
-        this.time.delayedCall(3000, () => {
-            console.log('[BattleScene] Returning to WorldScene after defeat');
-            this.cleanup();
-            this.scene.start('WorldScene');
+        // Display sub-message
+        const subText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            'Returning to Start...',
+            {
+                fontSize: '24px',
+                fontFamily: 'Arial',
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 4
+            }
+        ).setOrigin(0.5).setAlpha(0);
+        
+        subText.setDepth(10000);
+        
+        this.tweens.add({
+            targets: subText,
+            alpha: 1,
+            duration: 500,
+            delay: 500,
+            ease: 'Power2'
         });
+        
+        // Return to StartScene after delay (game over)
+        this.time.delayedCall(3000, () => {
+            console.log('[BattleScene] Game Over - Returning to StartScene');
+            this.cleanup();
+            this.scene.start('StartScene');
+        });
+    }
+    
+    handlePlayerDefeat() {
+        // Legacy method - redirect to new system
+        console.log('[BattleScene] Player defeated - using new party defeat system');
+        this.handleCharacterDowned(this.player, true);
     }
     
     updateRangeIndicators() {
@@ -4393,6 +4520,37 @@ export default class BattleScene extends Phaser.Scene {
         this.hudManager.updateEnemyList(enemyData);
     }
 
+    getUpdatedPartyHPStates() {
+        console.log('[BattleScene] Getting updated party HP states...');
+        
+        const hpStates = {
+            playerHP: this.currentHP,
+            playerMaxHP: this.maxHP,
+            playerDowned: this.isPlayerDowned,
+            partyMembers: []
+        };
+        
+        // Collect HP data for each party member
+        if (this.partyCharacters && this.partyCharacters.length > 0) {
+            this.partyCharacters.forEach((character, index) => {
+                if (character.active && character.memberData) {
+                    hpStates.partyMembers.push({
+                        id: character.memberData.id,
+                        name: character.memberData.name,
+                        currentHP: character.memberData.currentHP || character.memberData.maxHP,
+                        maxHP: character.memberData.maxHP,
+                        isDowned: character.memberData.isDowned || false
+                    });
+                    console.log(`[BattleScene]   ${character.memberData.name}: ${hpStates.partyMembers[index].currentHP}/${hpStates.partyMembers[index].maxHP} (Downed: ${hpStates.partyMembers[index].isDowned})`);
+                }
+            });
+        }
+        
+        console.log(`[BattleScene] Player HP: ${hpStates.playerHP}/${hpStates.playerMaxHP} (Downed: ${hpStates.playerDowned})`);
+        
+        return hpStates;
+    }
+    
     cleanup() {
         console.log('[BattleScene] Cleaning up scene');
         
