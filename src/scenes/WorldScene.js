@@ -273,6 +273,10 @@ export default class WorldScene extends Phaser.Scene {
         // Create save point with glowing effect
         this.createSavePoint(300, 300); // Position at (300, 300) - adjust as needed
         this.isOnSavePoint = false;
+        
+        // Create flying vehicle (far right of map) - only accessible with full party (4 members)
+        this.createFlyingVehicle(mapWidth - 200, mapHeight / 2);
+        this.isNearVehicle = false;
 
         function adjustCameraForDevice() {
             const width = window.innerWidth;
@@ -694,6 +698,141 @@ export default class WorldScene extends Phaser.Scene {
         
         console.log('[WorldScene] Save point created at:', { x, y });
     }
+    
+    createFlyingVehicle(x, y) {
+        console.log('[WorldScene] Creating flying vehicle at:', { x, y });
+        
+        // Create vehicle (red rectangle with glow)
+        this.vehicle = this.add.rectangle(x, y, 80, 120, 0xFF0000);
+        this.vehicle.setDepth(10);
+        
+        // Create glowing aura around vehicle
+        this.vehicleGlow = this.add.graphics();
+        this.vehicleGlow.setDepth(9);
+        
+        // Store position for redrawing glow
+        this.vehiclePosition = { x, y };
+        
+        // Draw initial glow
+        this.updateVehicleGlow();
+        
+        // Add pulsing glow animation
+        this.tweens.add({
+            targets: this.vehicleGlow,
+            alpha: 0.6,
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut'
+        });
+        
+        // Add floating animation
+        this.tweens.add({
+            targets: this.vehicle,
+            y: y - 15,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut'
+        });
+        
+        // Create trigger zone (larger than vehicle for easier access)
+        this.vehicleTriggerZone = this.add.zone(x, y, 150, 180);
+        this.physics.add.existing(this.vehicleTriggerZone);
+        this.vehicleTriggerZone.body.setAllowGravity(false);
+        this.vehicleTriggerZone.body.moves = false;
+        
+        // Create DOM prompt element (hidden by default)
+        this.createVehiclePrompt();
+        
+        console.log('[WorldScene] Flying vehicle created at far right of map');
+    }
+    
+    updateVehicleGlow() {
+        if (!this.vehicleGlow || !this.vehiclePosition) return;
+        
+        const { x, y } = this.vehiclePosition;
+        
+        this.vehicleGlow.clear();
+        
+        // Inner glow (red)
+        this.vehicleGlow.fillStyle(0xFF0000, 0.4);
+        this.vehicleGlow.fillRect(x - 50, y - 70, 100, 140);
+        
+        // Middle glow
+        this.vehicleGlow.fillStyle(0xFF4444, 0.3);
+        this.vehicleGlow.fillRect(x - 65, y - 85, 130, 170);
+        
+        // Outer glow
+        this.vehicleGlow.fillStyle(0xFF6666, 0.2);
+        this.vehicleGlow.fillRect(x - 80, y - 100, 160, 200);
+    }
+    
+    createVehiclePrompt() {
+        this.vehiclePrompt = document.createElement('div');
+        this.vehiclePrompt.id = 'vehicle-prompt';
+        this.vehiclePrompt.style.cssText = `
+            position: fixed;
+            bottom: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            border: 3px solid #FF0000;
+            border-radius: 15px;
+            padding: 20px 40px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 24px;
+            text-align: center;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 0 30px rgba(255, 0, 0, 0.6);
+        `;
+        document.body.appendChild(this.vehiclePrompt);
+    }
+    
+    updateVehiclePrompt() {
+        if (!this.vehiclePrompt) return;
+        
+        const partySize = partyLeadershipManager.getPartySize();
+        
+        if (this.isNearVehicle) {
+            if (partySize >= 4) {
+                // Full party - can enter
+                this.vehiclePrompt.innerHTML = `
+                    <div style="color: #00FF00; font-size: 28px; font-weight: bold; margin-bottom: 10px;">
+                        🚀 FLYING VEHICLE
+                    </div>
+                    <div style="color: #FFD700; margin-bottom: 10px;">
+                        Full party assembled!
+                    </div>
+                    <div style="color: white;">
+                        Press <span style="color: #FFD700; font-weight: bold;">U</span> to board
+                    </div>
+                `;
+                this.vehiclePrompt.style.display = 'block';
+            } else {
+                // Not enough party members
+                this.vehiclePrompt.innerHTML = `
+                    <div style="color: #FF4444; font-size: 24px; font-weight: bold; margin-bottom: 10px;">
+                        🚀 FLYING VEHICLE
+                    </div>
+                    <div style="color: #FFD700; margin-bottom: 10px;">
+                        Requires full party (4 members)
+                    </div>
+                    <div style="color: #FF8888; font-size: 18px;">
+                        Current party: ${partySize}/4
+                    </div>
+                    <div style="color: #AAA; font-size: 16px; margin-top: 10px;">
+                        Recruit more members to unlock
+                    </div>
+                `;
+                this.vehiclePrompt.style.display = 'block';
+            }
+        } else {
+            this.vehiclePrompt.style.display = 'none';
+        }
+    }
 
     update() {
         // Update gamepad
@@ -799,6 +938,37 @@ export default class WorldScene extends Phaser.Scene {
             
             // Player is on save point if within 50 pixels
             this.isOnSavePoint = distance < 50;
+        }
+        
+        // Check if player is near flying vehicle
+        if (this.playerManager && this.playerManager.player && this.vehicleTriggerZone) {
+            const distanceToVehicle = Phaser.Math.Distance.Between(
+                this.playerManager.player.x,
+                this.playerManager.player.y,
+                this.vehiclePosition.x,
+                this.vehiclePosition.y
+            );
+            
+            // Player is near vehicle if within 100 pixels
+            const wasNearVehicle = this.isNearVehicle;
+            this.isNearVehicle = distanceToVehicle < 100;
+            
+            // Update prompt when proximity changes
+            if (this.isNearVehicle !== wasNearVehicle) {
+                this.updateVehiclePrompt();
+            }
+            
+            // Check for U key to board vehicle (only if full party)
+            if (this.isNearVehicle && partyLeadershipManager.getPartySize() >= 4) {
+                const uKey = this.input.keyboard.addKey('U');
+                if (Phaser.Input.Keyboard.JustDown(uKey)) {
+                    this.boardFlyingVehicle();
+                }
+            }
+        } else if (this.isNearVehicle) {
+            // Left the vehicle area
+            this.isNearVehicle = false;
+            this.updateVehiclePrompt();
         }
         
         // Update HUD stats periodically (every second)
@@ -1151,6 +1321,70 @@ export default class WorldScene extends Phaser.Scene {
         super.shutdown();
     }
 
+    boardFlyingVehicle() {
+        console.log('[WorldScene] ========== BOARDING FLYING VEHICLE ==========');
+        console.log('[WorldScene] Full party detected - entering rail shooter scene');
+        
+        // Store current position
+        const currentLeader = partyLeadershipManager.getLeader();
+        const returnPosition = currentLeader && currentLeader.sprite ? {
+            x: currentLeader.sprite.x,
+            y: currentLeader.sprite.y
+        } : {
+            x: this.playerManager.player.x,
+            y: this.playerManager.player.y
+        };
+        
+        console.log('[WorldScene] Storing position for return:', returnPosition);
+        
+        // Create boarding animation
+        const centerX = this.cameras.main.centerX;
+        const centerY = this.cameras.main.centerY;
+        
+        const boardingText = this.add.text(
+            centerX,
+            centerY,
+            'BOARDING VEHICLE...',
+            {
+                fontSize: '48px',
+                fontFamily: 'Arial',
+                color: '#FF0000',
+                stroke: '#000000',
+                strokeThickness: 6,
+                fontWeight: 'bold'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(10000);
+        
+        // Flash effect
+        this.tweens.add({
+            targets: boardingText,
+            alpha: 0,
+            duration: 200,
+            yoyo: true,
+            repeat: 2
+        });
+        
+        // Transition to ShooterScene after delay
+        this.time.delayedCall(1000, () => {
+            boardingText.destroy();
+            
+            // Hide vehicle prompt
+            if (this.vehiclePrompt) {
+                this.vehiclePrompt.style.display = 'none';
+            }
+            
+            // Pause WorldScene
+            this.scene.pause();
+            
+            // Launch ShooterScene
+            this.scene.launch('ShooterScene', {
+                returnPosition: returnPosition
+            });
+            
+            console.log('[WorldScene] Launched ShooterScene - rail shooter active!');
+        });
+    }
+    
     startBattle(npcDataArray) {
         console.log('[WorldScene] ========== STARTING BATTLE ==========');
         console.log('[WorldScene] NPC data:', npcDataArray);
