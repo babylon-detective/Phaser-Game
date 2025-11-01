@@ -205,31 +205,40 @@ export default class HUDManager {
                 name: battleScene.playerData.name || 'Player',
                 color: battleScene.playerData.color || 0x808080,
                 indicatorColor: battleScene.playerData.indicatorColor || 0xff0000,
-                currentHP: battleScene.currentHP || playerStats.health,
+                currentHP: battleScene.currentHP !== undefined ? battleScene.currentHP : playerStats.health,
                 maxHP: battleScene.maxHP || playerStats.maxHealth,
                 level: playerStats.level,
+                isDowned: battleScene.isPlayerDowned || false,
                 isLeader: true,
                 isOriginalPlayer: battleScene.playerData.isOriginalPlayer
             });
         }
         
-        // Followers (partyMembersData)
-        if (battleScene.partyMembersData && battleScene.partyMembersData.length > 0) {
-            battleScene.partyMembersData.forEach((memberData, index) => {
+        // Followers (partyCharacters - LIVE data from game objects)
+        if (battleScene.partyCharacters && battleScene.partyCharacters.length > 0) {
+            battleScene.partyCharacters.forEach((character, index) => {
+                if (!character || !character.active || !character.memberData) return;
+                
+                const memberData = character.memberData;
                 party.push({
                     name: memberData.name,
                     color: memberData.color,
                     indicatorColor: memberData.indicatorColor,
-                    currentHP: memberData.stats?.health || 100,
-                    maxHP: memberData.stats?.maxHealth || 100,
+                    currentHP: memberData.currentHP || memberData.maxHP, // LIVE HP from game object
+                    maxHP: memberData.maxHP,
                     level: memberData.stats?.level || 1,
                     attack: memberData.stats?.attack || 10,
+                    isDowned: memberData.isDowned || false,
                     isLeader: false
                 });
             });
         }
         
         console.log(`[HUDManager] Battle party:`, party.map(p => p.name).join(', '));
+        console.log(`[HUDManager] Party HP states:`);
+        party.forEach(p => {
+            console.log(`  ${p.name}: ${p.currentHP}/${p.maxHP} ${p.isDowned ? '(DOWNED)' : ''}`);
+        });
         
         // Build HTML for all party members in leadership order
         let partyHTML = '';
@@ -238,22 +247,26 @@ export default class HUDManager {
             const isLeader = member.isLeader;
             const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
             const hpPercent = (member.currentHP / member.maxHP) * 100;
+            const isDowned = member.isDowned || member.currentHP <= 0;
+            const panelOpacity = isDowned ? 0.5 : 1.0;
+            const hpColor = isDowned ? '#ff4444' : colorHex;
             
             // Leader gets crown emoji
             const leaderIndicator = isLeader ? '👑 ' : '';
+            const downedIndicator = isDowned ? ' <span style="color: #ff4444; font-size: 10px;">⚠️ DOWNED</span>' : '';
             
             partyHTML += `
-                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; ${isLeader ? 'box-shadow: 0 0 10px ' + colorHex + ';' : ''} border-radius: 10px; padding: 10px; min-width: 150px;">
+                <div class="character-panel" style="opacity: ${panelOpacity}; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; ${isLeader ? 'box-shadow: 0 0 10px ' + colorHex + ';' : ''} border-radius: 10px; padding: 10px; min-width: 150px;">
                     <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
                         <div style="width: 10px; height: 10px; background: ${colorHex}; border-radius: 2px;"></div>
-                        <div class="hud-title" style="margin: 0; font-size: 14px;">${leaderIndicator}${member.name.toUpperCase()}</div>
+                        <div class="hud-title" style="margin: 0; font-size: 14px;">${leaderIndicator}${member.name.toUpperCase()}${downedIndicator}</div>
                     </div>
                     <div class="stat-row" style="font-size: 12px;">
                         <span class="stat-label">HP:</span>
                         <div class="stat-bar-container" style="flex: 1; height: 8px;">
-                            <div class="stat-bar health-bar" id="battle-party-${index}-health-bar" style="width: ${hpPercent}%; background: ${colorHex};"></div>
+                            <div class="stat-bar health-bar" id="battle-party-${index}-health-bar" style="width: ${hpPercent}%; background: ${hpColor};"></div>
                         </div>
-                        <span class="stat-value" id="battle-party-${index}-health" style="font-size: 11px;">${member.currentHP}/${member.maxHP}</span>
+                        <span class="stat-value" id="battle-party-${index}-health" style="font-size: 11px; color: ${hpColor};">${member.currentHP}/${member.maxHP}</span>
                     </div>
                     <div class="stat-row" style="font-size: 11px;">
                         <span class="stat-label">Lvl:</span>
