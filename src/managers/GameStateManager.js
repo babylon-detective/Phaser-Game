@@ -8,6 +8,7 @@
 import { moneyManager } from './MoneyManager.js';
 import { itemsManager } from './ItemsManager.js';
 import { skillsManager } from './SkillsManager.js';
+import { partyLeadershipManager } from './PartyLeadershipManager.js';
 
 export default class GameStateManager {
     constructor() {
@@ -223,6 +224,8 @@ export default class GameStateManager {
         const im = itemsManager;
         const sm = skillsManager;
         
+        const plm = partyLeadershipManager;
+        
         const gameState = {
             playTime: this.getPlayTime(),
             playerStats: this.playerStats,
@@ -234,6 +237,7 @@ export default class GameStateManager {
             money: mm ? mm.getSaveData() : { money: 100, transactionHistory: [] },
             items: im ? im.getSaveData() : { inventory: [] },
             skills: sm ? sm.getSaveData() : { playerSkills: { unlocked: ['quick_strike'], equipped: ['quick_strike'], maxEquipped: 4, cooldowns: {} }, playerEnergy: { current: 100, max: 100, regenRate: 2 } },
+            party: plm ? plm.getSaveData() : { party: [], originalPlayerData: null },
             savedAt: new Date().toISOString()
         };
 
@@ -274,10 +278,11 @@ export default class GameStateManager {
             this.battleHistory = gameState.battleHistory || [];
             this.negotiationHistory = gameState.negotiationHistory || [];
             
-            // Restore money, items, and skills
+            // Restore money, items, skills, and party
             const mm = moneyManager;
             const im = itemsManager;
             const sm = skillsManager;
+            const plm = partyLeadershipManager;
             
             if (mm && gameState.money) {
                 mm.loadSaveData(gameState.money);
@@ -289,6 +294,10 @@ export default class GameStateManager {
             
             if (sm && gameState.skills) {
                 sm.loadSaveData(gameState.skills);
+            }
+            
+            if (plm && gameState.party) {
+                plm.loadSaveData(gameState.party);
             }
             
             console.log('[GameStateManager] ✅ State restored:');
@@ -339,17 +348,19 @@ export default class GameStateManager {
         this.battleHistory = [];
         this.negotiationHistory = [];
         
-        // Reset money, items, and skills
+        // Reset money, items, skills, and party
         const mm = moneyManager;
         const im = itemsManager;
         const sm = skillsManager;
+        const plm = partyLeadershipManager;
         
         if (mm) mm.reset();
         if (im) im.reset();
         if (sm) sm.reset();
+        if (plm) plm.reset();
         
         localStorage.removeItem('gameState');
-        console.log('[GameStateManager] Game state reset (including money and items)');
+        console.log('[GameStateManager] Game state reset (including money, items, and party)');
     }
 }
 

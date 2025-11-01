@@ -3,7 +3,9 @@ import Phaser from "phaser";
 import SaveState from "../SaveState";
 import PlayerManager from "../managers/PlayerManager";
 import NpcManager from "../managers/NpcManager";
-import PartyManager from "../managers/PartyManager";
+import PartyManager from "../managers/PartyManager"; // Legacy - for recruitable NPCs only
+import PartyFollowingManager from "../managers/PartyFollowingManager";
+import { partyLeadershipManager } from "../managers/PartyLeadershipManager";
 import HUDManager from "../ui/HUDManager";
 import MapScene from "./MapScene";
 import { gameStateManager } from "../managers/GameStateManager.js";
@@ -132,6 +134,15 @@ export default class WorldScene extends Phaser.Scene {
         // Create player manager
         this.playerManager = new PlayerManager(this);
         this.playerManager.create();
+        
+        // Initialize party leadership with player as leader
+        partyLeadershipManager.initializeParty(
+            this.playerManager.player,
+            this.playerManager.controls?.directionIndicator || null
+        );
+        
+        // Create party following manager
+        this.partyFollowingManager = new PartyFollowingManager(this);
 
         // Define NPC types
         this.npcTypes = {
@@ -373,10 +384,30 @@ export default class WorldScene extends Phaser.Scene {
         if (data.transitionType === 'recruitment' && data.recruitedNpcId) {
             console.log('[WorldScene] Processing recruitment:', data.recruitedNpcId);
             
-            // Handle recruitment in PartyManager (makes NPC follow player)
-            if (this.partyManager) {
-                this.partyManager.handleRecruitmentSuccess(data.recruitedNpcId);
-                console.log('[WorldScene] Party manager updated for recruitment');
+            // Get recruitable NPC data from PartyManager
+            const npcData = this.partyManager?.getRecruitableNPC(data.recruitedNpcId);
+            if (npcData) {
+                // Add to party leadership system
+                const added = partyLeadershipManager.addPartyMember(npcData);
+                if (added) {
+                    console.log('[WorldScene] ✅ Added to party leadership system');
+                    
+                    // Position new member near the player for smooth following start
+                    // The following behavior will naturally position them correctly
+                    const leader = partyLeadershipManager.getLeader();
+                    if (leader && leader.sprite && npcData.gameObject) {
+                        npcData.gameObject.setPosition(
+                            leader.sprite.x - 60,
+                            leader.sprite.y
+                        );
+                    }
+                }
+                
+                // Handle in legacy PartyManager (for sprite management)
+                if (this.partyManager) {
+                    this.partyManager.handleRecruitmentSuccess(data.recruitedNpcId);
+                    console.log('[WorldScene] Party manager updated for recruitment');
+                }
             }
             
             // Remove recruited NPC from NPC manager's battle trigger list
@@ -607,29 +638,39 @@ export default class WorldScene extends Phaser.Scene {
         }
         
         // Check for leader rotation with Q/E keys or D-pad Left/Right
-        if (this.partyManager && this.partyManager.partyMembers.length >= 1 && this.leaderRotateCooldown <= 0) {
+        if (partyLeadershipManager.getPartySize() >= 2 && this.leaderRotateCooldown <= 0) {
             const qKey = this.input.keyboard.addKey('Q');
             const eKey = this.input.keyboard.addKey('E');
             
-            // Q key or D-pad Left (button 14)
+            // Q key or D-pad Left (button 14) - Rotate left
             if (Phaser.Input.Keyboard.JustDown(qKey) || this.isGamepadButtonJustPressed(14)) {
                 console.log('[WorldScene] Q/D-pad Left pressed - rotating leader left');
-                this.partyManager.rotateLeader('left');
-                this.leaderRotateCooldown = this.leaderRotateDelay;
+                const newLeader = partyLeadershipManager.rotateLeft();
+                if (newLeader) {
+                    this.switchControlToLeader(newLeader);
+                    this.leaderRotateCooldown = this.leaderRotateDelay;
+                }
             }
             
-            // E key or D-pad Right (button 15)
+            // E key or D-pad Right (button 15) - Rotate right
             if (Phaser.Input.Keyboard.JustDown(eKey) || this.isGamepadButtonJustPressed(15)) {
                 console.log('[WorldScene] E/D-pad Right pressed - rotating leader right');
-                this.partyManager.rotateLeader('right');
-                this.leaderRotateCooldown = this.leaderRotateDelay;
+                const newLeader = partyLeadershipManager.rotateRight();
+                if (newLeader) {
+                    this.switchControlToLeader(newLeader);
+                    this.leaderRotateCooldown = this.leaderRotateDelay;
+                }
             }
         }
         
-        // Player update
+        // Player update (controls whichever character is currently leader)
         this.playerManager?.update();
 
-        // Party update (recruited members follow player)
+        // Party following update (everyone follows in formation)
+        const party = partyLeadershipManager.getParty();
+        this.partyFollowingManager?.update(party);
+
+        // Legacy party manager update (for recruitable NPC behavior only)
         this.partyManager?.update();
 
         // NPC update
@@ -780,6 +821,50 @@ export default class WorldScene extends Phaser.Scene {
         }
     }
     
+    /**
+     * Switch control from current leader to new leader
+     * Updates PlayerManager and camera to follow the new leader
+     */
+    switchControlToLeader(newLeader) {
+        console.log(`[WorldScene] ======== SWITCHING CONTROL TO ${newLeader.name} ========`);
+        
+        if (!newLeader.sprite) {
+            console.warn('[WorldScene] New leader has no sprite!');
+            return;
+        }
+        
+        // Stop all character velocities to prevent carryover
+        const party = partyLeadershipManager.getParty();
+        party.forEach(member => {
+            if (member.sprite && member.sprite.body) {
+                member.sprite.body.setVelocity(0, 0);
+            }
+        });
+        
+        // Update PlayerManager to control the new leader sprite
+        if (this.playerManager) {
+            this.playerManager.player = newLeader.sprite;
+            
+            // Update WorldControls reference to the new leader
+            if (this.playerManager.controls) {
+                this.playerManager.controls.player = newLeader.sprite;
+                // Reset movement state
+                this.playerManager.controls.isRunning = false;
+                this.playerManager.controls.isCharging = false;
+                console.log(`[WorldScene] ✅ Controls now operate ${newLeader.name}`);
+            }
+        }
+        
+        // Update camera to follow new leader
+        this.cameras.main.startFollow(newLeader.sprite, true, 0.1, 0.1);
+        console.log(`[WorldScene] ✅ Camera now follows ${newLeader.name}`);
+        
+        // DON'T call arrangeFormation here - it causes compounding position issues
+        // The natural following behavior in update() will position followers correctly
+        
+        console.log('[WorldScene] =============================================');
+    }
+
     isGamepadButtonJustPressed(buttonIndex) {
         if (!this.gamepad) return false;
         
@@ -944,20 +1029,20 @@ export default class WorldScene extends Phaser.Scene {
         // Pause this scene instead of stopping it
         this.scene.pause();
         
-        // Get party members for battle
-        const partyMembers = this.partyManager ? this.partyManager.getPartyForBattle() : [];
+        // Get party members for battle in LEADERSHIP ORDER
+        // Leader is at index 0, followers at 1, 2, 3
+        const partyMembers = partyLeadershipManager.getPartyForBattle();
         
         console.log('[WorldScene] ========================================');
-        console.log('[WorldScene] Party Manager exists:', !!this.partyManager);
-        console.log('[WorldScene] Party members in manager:', this.partyManager ? this.partyManager.partyMembers.length : 0);
-        console.log('[WorldScene] Party data for battle:', partyMembers);
-        console.log('[WorldScene] Party member count:', partyMembers.length);
+        console.log('[WorldScene] Party Leadership Manager - sending to battle');
+        console.log('[WorldScene] Party size:', partyMembers.length);
         if (partyMembers.length > 0) {
             partyMembers.forEach((member, i) => {
-                console.log(`[WorldScene]   Member ${i + 1}: ${member.name} (Lvl ${member.stats.level})`);
+                const role = i === 0 ? '👑 LEADER' : `   Follower ${i}`;
+                console.log(`[WorldScene]   [${i}] ${role}: ${member.name} (Lvl ${member.stats?.level || 1})`);
             });
         } else {
-            console.log('[WorldScene]   ⚠️ No party members to send to battle');
+            console.log('[WorldScene]   ⚠️ No party members');
         }
         console.log('[WorldScene] ========================================');
         

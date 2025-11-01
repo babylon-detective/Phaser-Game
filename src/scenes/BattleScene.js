@@ -127,9 +127,27 @@ export default class BattleScene extends Phaser.Scene {
             return;
         }
 
-        this.playerData = data.playerData;
+        // NEW SYSTEM: partyMembers contains ALL characters in leadership order
+        // Index 0 = current leader (controls in WorldScene)
+        // Index 1+ = followers
+        const allPartyMembers = data.partyMembers || [];
+        
+        if (allPartyMembers.length > 0) {
+            // Leader becomes the "player" in battle
+            this.playerData = allPartyMembers[0];
+            // Followers become party members
+            this.partyMembersData = allPartyMembers.slice(1);
+            
+            console.log('[BattleScene] 👑 Leader (player in battle):', this.playerData.name);
+            console.log('[BattleScene] 👥 Followers (party):', this.partyMembersData.map(m => m.name).join(', '));
+        } else {
+            // Fallback to old system if no party data
+            this.playerData = data.playerData;
+            this.partyMembersData = [];
+            console.warn('[BattleScene] No party data - using legacy playerData');
+        }
+        
         this.npcDataArray = data.npcDataArray;
-        this.partyMembersData = data.partyMembers || [];
         
         console.log('[BattleScene] ==========================================');
         console.log('[BattleScene] this.partyMembersData set to:', this.partyMembersData);
@@ -235,14 +253,17 @@ export default class BattleScene extends Phaser.Scene {
         );
         this.physics.add.existing(this.ground, true);
 
-        // Create player
+        // Create player (current leader from WorldScene)
         const playerX = this.cameras.main.width * 0.3;
+        const playerColor = this.playerData.color || 0x808080;
+        const playerIndicatorColor = this.playerData.indicatorColor || 0xff0000;
+        
         this.player = this.add.rectangle(
             playerX,
             groundY - 150,
             96,
             192,
-            0x808080
+            playerColor
         );
         this.physics.add.existing(this.player);
         this.player.body.setBounce(0.2);
@@ -251,6 +272,19 @@ export default class BattleScene extends Phaser.Scene {
 
         // Add collision between player and ground
         this.physics.add.collider(this.player, this.ground);
+        
+        // Add direction indicator for player
+        this.playerIndicator = this.add.rectangle(
+            playerX,
+            groundY - 150 - 40,
+            10,
+            10,
+            playerIndicatorColor
+        );
+        this.playerIndicator.setDepth(1000);
+        
+        console.log(`[BattleScene] ✅ Created leader as player: ${this.playerData.name} (Color: 0x${playerColor.toString(16)})`);
+
         
         // Create party member characters
         this.createPartyCharacters(groundY);
