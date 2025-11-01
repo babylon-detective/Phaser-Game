@@ -394,6 +394,14 @@ export default class BattleScene extends Phaser.Scene {
 
         // Add collision between player and enemies
         this.physics.add.collider(this.player, this.enemies, this.handlePlayerEnemyCollision, null, this);
+        
+        // Add collision between party characters and enemies
+        this.partyCharacters.forEach(character => {
+            if (character && character.body) {
+                this.physics.add.collider(character, this.enemies);
+                console.log(`[BattleScene] Added collision between ${character.memberData.name} and enemies`);
+            }
+        });
 
         // Add collision between enemies and projectiles
         this.physics.add.collider(this.enemies, this.projectiles, this.handleProjectileEnemyCollision, null, this);
