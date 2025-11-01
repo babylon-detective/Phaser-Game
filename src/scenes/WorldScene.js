@@ -424,10 +424,24 @@ export default class WorldScene extends Phaser.Scene {
                 });
             }
             
-            // Set player position
+            // Set player position and reposition entire party
             if (data.returnPosition && this.playerManager && this.playerManager.player) {
+                console.log('[WorldScene] Restoring position after recruitment:', data.returnPosition);
                 this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
                 this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+                
+                // Reposition the entire party in formation around the restored position
+                const party = partyLeadershipManager.getParty();
+                if (party.length > 0) {
+                    // Leader is at the restored position
+                    if (party[0].sprite) {
+                        party[0].sprite.setPosition(data.returnPosition.x, data.returnPosition.y);
+                    }
+                    // Arrange followers behind the leader
+                    if (this.partyFollowingManager) {
+                        this.partyFollowingManager.arrangeFormation(party);
+                    }
+                }
             }
             
             // Apply battle end cooldown
@@ -447,11 +461,24 @@ export default class WorldScene extends Phaser.Scene {
         if (data.battleVictory && data.transitionType === 'victory') {
             console.log('[WorldScene] Processing battle victory in handleResumeData');
             
-            // Set player position
+            // Set player position and reposition entire party
             if (data.returnPosition && this.playerManager && this.playerManager.player) {
-                console.log('[WorldScene] Setting player position:', data.returnPosition);
+                console.log('[WorldScene] Restoring position after victory:', data.returnPosition);
                 this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
                 this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+                
+                // Reposition the entire party in formation around the restored position
+                const party = partyLeadershipManager.getParty();
+                if (party.length > 0) {
+                    // Leader is at the restored position
+                    if (party[0].sprite) {
+                        party[0].sprite.setPosition(data.returnPosition.x, data.returnPosition.y);
+                    }
+                    // Arrange followers behind the leader
+                    if (this.partyFollowingManager) {
+                        this.partyFollowingManager.arrangeFormation(party);
+                    }
+                }
             }
             
             // Update defeated NPCs
@@ -485,10 +512,24 @@ export default class WorldScene extends Phaser.Scene {
         } else if (data.transitionType === 'escape') {
             console.log('[WorldScene] Processing escape from battle');
             
-            // Set player position
+            // Set player position and reposition entire party
             if (data.returnPosition && this.playerManager && this.playerManager.player) {
+                console.log('[WorldScene] Restoring position after escape:', data.returnPosition);
                 this.playerManager.player.setPosition(data.returnPosition.x, data.returnPosition.y);
                 this.cameras.main.centerOn(data.returnPosition.x, data.returnPosition.y);
+                
+                // Reposition the entire party in formation around the restored position
+                const party = partyLeadershipManager.getParty();
+                if (party.length > 0) {
+                    // Leader is at the restored position
+                    if (party[0].sprite) {
+                        party[0].sprite.setPosition(data.returnPosition.x, data.returnPosition.y);
+                    }
+                    // Arrange followers behind the leader
+                    if (this.partyFollowingManager) {
+                        this.partyFollowingManager.arrangeFormation(party);
+                    }
+                }
             }
             
             // Update NPC health with data from battle
@@ -1080,6 +1121,18 @@ export default class WorldScene extends Phaser.Scene {
         // Store current NPC state
         const npcState = this.npcManager.getNpcData();
         
+        // CRITICAL: Store the player's current position to return to after battle
+        const currentLeader = partyLeadershipManager.getLeader();
+        const playerPosition = currentLeader && currentLeader.sprite ? {
+            x: currentLeader.sprite.x,
+            y: currentLeader.sprite.y
+        } : {
+            x: this.playerManager.player.x,
+            y: this.playerManager.player.y
+        };
+        
+        console.log('[WorldScene] Storing player position for return:', playerPosition);
+        
         // Pause this scene instead of stopping it
         this.scene.pause();
         
@@ -1100,12 +1153,13 @@ export default class WorldScene extends Phaser.Scene {
         }
         console.log('[WorldScene] ========================================');
         
-        // Start battle scene with NPC state and party data
+        // Start battle scene with NPC state, party data, and world position
         this.scene.launch('BattleScene', {
             playerData,
             npcDataArray: npcs,
             npcState: npcState,
-            partyMembers: partyMembers
+            partyMembers: partyMembers,
+            worldPosition: playerPosition // Pass the actual world position
         });
     }
 }

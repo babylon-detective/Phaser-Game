@@ -87,6 +87,31 @@ export default class NpcManager {
             { id: 'npc_north_villager_1', type: 'VILLAGER', x: 450, y: 80, behavior: 'wander' },
             { id: 'npc_north_merchant_1', type: 'MERCHANT', x: 750, y: 120, behavior: 'stationary' },
             
+            // Area 5: Southeast Outpost (1800px lower-right from South cluster) - Large Settlement
+            // Guards (6) - Patrol perimeter
+            { id: 'npc_southeast_guard_1', type: 'GUARD', x: 2150, y: 1450, behavior: 'patrol' },
+            { id: 'npc_southeast_guard_2', type: 'GUARD', x: 2280, y: 1380, behavior: 'patrol' },
+            { id: 'npc_southeast_guard_3', type: 'GUARD', x: 2100, y: 1550, behavior: 'patrol' },
+            { id: 'npc_southeast_guard_4', type: 'GUARD', x: 2320, y: 1500, behavior: 'patrol' },
+            { id: 'npc_southeast_guard_5', type: 'GUARD', x: 2180, y: 1350, behavior: 'patrol' },
+            { id: 'npc_southeast_guard_6', type: 'GUARD', x: 2250, y: 1580, behavior: 'patrol' },
+            
+            // Merchants (3) - Stationary market area
+            { id: 'npc_southeast_merchant_1', type: 'MERCHANT', x: 2220, y: 1520, behavior: 'stationary' },
+            { id: 'npc_southeast_merchant_2', type: 'MERCHANT', x: 2160, y: 1480, behavior: 'stationary' },
+            { id: 'npc_southeast_merchant_3', type: 'MERCHANT', x: 2280, y: 1450, behavior: 'stationary' },
+            
+            // Villagers (9) - Wander throughout settlement
+            { id: 'npc_southeast_villager_1', type: 'VILLAGER', x: 2080, y: 1500, behavior: 'wander' },
+            { id: 'npc_southeast_villager_2', type: 'VILLAGER', x: 2350, y: 1470, behavior: 'wander' },
+            { id: 'npc_southeast_villager_3', type: 'VILLAGER', x: 2200, y: 1420, behavior: 'wander' },
+            { id: 'npc_southeast_villager_4', type: 'VILLAGER', x: 2140, y: 1540, behavior: 'wander' },
+            { id: 'npc_southeast_villager_5', type: 'VILLAGER', x: 2300, y: 1380, behavior: 'wander' },
+            { id: 'npc_southeast_villager_6', type: 'VILLAGER', x: 2190, y: 1560, behavior: 'wander' },
+            { id: 'npc_southeast_villager_7', type: 'VILLAGER', x: 2120, y: 1430, behavior: 'wander' },
+            { id: 'npc_southeast_villager_8', type: 'VILLAGER', x: 2330, y: 1520, behavior: 'wander' },
+            { id: 'npc_southeast_villager_9', type: 'VILLAGER', x: 2240, y: 1410, behavior: 'wander' },
+            
             // Additional NPCs for variety
             { id: 'npc_extra_villager_1', type: 'VILLAGER', x: 150, y: 400, behavior: 'wander' },
             { id: 'npc_extra_guard_1', type: 'GUARD', x: 900, y: 200, behavior: 'patrol' }

@@ -171,12 +171,10 @@ export default class BattleScene extends Phaser.Scene {
             this.npcDataArray = [this.npcDataArray];
         }
 
-        // Store the world position the player came from
-        this.worldPosition = {
-            x: this.playerData.x,
-            y: this.playerData.y
-        };
-
+        // Store the world position the player came from (passed from WorldScene)
+        this.worldPosition = data.worldPosition || { x: 400, y: 300 }; // Fallback to default if not provided
+        
+        console.log('[BattleScene] World position to return to:', this.worldPosition);
         console.log('[BattleScene] Init complete. Party members to create:', this.partyMembersData.length);
     }
 
@@ -1963,28 +1961,28 @@ export default class BattleScene extends Phaser.Scene {
             this.rotateCharacter('right');
         }
 
-        // Handle AP charging (keyboard = or gamepad R2 - button 7)
-        const isR2Pressed = this.gamepad && this.gamepad.buttons && this.gamepad.buttons[7] && this.gamepad.buttons[7].pressed;
+        // Handle AP charging (keyboard = or gamepad L3 - button 10 - left stick click)
+        const isL3Pressed = this.gamepad && this.gamepad.buttons && this.gamepad.buttons[10] && this.gamepad.buttons[10].pressed;
         const isChargingKeyPressed = (this.chargeAPKey && this.chargeAPKey.isDown) || 
                                    (this.chargeAPKeyAlt && this.chargeAPKeyAlt.isDown) ||
-                                   isR2Pressed;
+                                   isL3Pressed;
         
         if (isChargingKeyPressed) {
             if (!this.isChargingAP) {
-                console.log('[BattleScene] =/R2 held - starting AP charge');
+                console.log('[BattleScene] =/L3 held - starting AP charge');
                 this.isChargingAP = true;
                 this.showChargingFeedback();
             }
         } else {
             if (this.isChargingAP) {
-                console.log('[BattleScene] =/R2 released - stopping AP charge');
+                console.log('[BattleScene] =/L3 released - stopping AP charge');
                 this.isChargingAP = false;
             }
         }
         
         // Debug: Check if key is working (reduced frequency)
         if (isChargingKeyPressed && Math.random() < 0.01) { // Only log 1% of the time
-            console.log('[BattleScene] = key is being held down');
+            console.log('[BattleScene] = key is being held down or L3 pressed');
         }
 
         // Handle face button abilities (only during player turn and with AP)

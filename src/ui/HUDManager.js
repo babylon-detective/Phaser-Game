@@ -536,7 +536,7 @@ export default class HUDManager {
                     <div class="control-row">🎮 <span>A/B/X/Y</span> Attack/Abilities</div>
                     <div class="control-row">🎮 <span>D-pad L/R</span> Rotate Character</div>
                     <div class="control-row">🎮 <span>D-pad Up</span> Group Mode</div>
-                    <div class="control-row">🎮 <span>R2</span> Charge AP</div>
+                    <div class="control-row">🎮 <span>L3 (Click Stick)</span> Charge AP</div>
                     <div class="control-row">🎮 <span>Select</span> Battle Menu</div>
                     <div class="control-row">🎮 <span>L2</span> Retreat</div>
                     <div class="control-row">🎮 <span>Start</span> Pause</div>
