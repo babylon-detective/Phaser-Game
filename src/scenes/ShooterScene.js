@@ -12,9 +12,6 @@ export default class ShooterScene extends Phaser.Scene {
         this.projectiles = [];
         this.enemyProjectiles = [];
         
-        // Wave/parallax background layers
-        this.waterLayers = [];
-        
         // Time limit
         this.timeLimit = 60000; // 60 seconds
         this.startTime = 0;
@@ -44,11 +41,8 @@ export default class ShooterScene extends Phaser.Scene {
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
         
-        // Create Mac System 7 style pseudo-3D water ground
+        // Create Mac System 7 style pseudo-3D ground with track
         this.createWaterGround(height * 0.6);
-        
-        // Create parallax background (sky/horizon)
-        this.createParallaxBackground();
         
         // Create player ship
         this.createPlayerShip(width, height);
@@ -63,163 +57,127 @@ export default class ShooterScene extends Phaser.Scene {
     }
     
     createWaterGround(groundY) {
-        console.log('[ShooterScene] Creating Mac System 7 style pseudo-3D water');
+        console.log('[ShooterScene] Creating Mac System 7 style pseudo-3D ground with track');
         
         const width = this.cameras.main.width;
         const height = this.cameras.main.height;
         
-        // Create graphics object for the water
-        const water = this.add.graphics();
-        water.setDepth(-10); // Behind everything
+        // Create graphics object for the ground
+        this.groundGraphics = this.add.graphics();
+        this.groundGraphics.setDepth(-10); // Behind everything
         
-        // Mac System 7 style water colors (blues with wave pattern)
-        const darkBlue = 0x1E90FF;
-        const lightBlue = 0x87CEEB;
-        const deepBlue = 0x0047AB;
-        const horizonColor = 0x4682B4;
+        // M7 style colors (matching the example)
+        const horizonY = Math.floor(height * 0.65); // Horizon at 65% from top
         
-        // Define perspective parameters
-        const horizonY = groundY - 100; // Horizon line
-        const rows = 30; // More rows for smoother water
-        const tilesPerRow = 24; // More tiles for better wave coverage
-        
-        // Store for animation
-        this.waterGraphics = water;
-        this.waterConfig = {
+        // Store configuration for rendering
+        this.groundConfig = {
             horizonY,
-            rows,
-            tilesPerRow,
             width,
             height,
-            darkBlue,
-            lightBlue,
-            deepBlue
+            // Colors from M7 example
+            GROUND_COLOR_NEAR: 0x00FF00,  // Bright green near
+            GROUND_COLOR_FAR: 0x003300,   // Dark green far
+            TRACK_COLOR: 0x333333,        // Dark gray track
+            TRACK_BORDER_COLOR: 0xFFFFFF, // White borders
+            TRACK_CENTER_COLOR: 0xFFFFFF, // White center line
+            TRACK_WIDTH: 200,
+            TRACK_BORDER_WIDTH: 20,
+            TRACK_CENTER_LINE_WIDTH: 4,
+            TRACK_PATTERN_LENGTH: 100,
+            SCANLINE_SPACING: 2,
+            baseScale: 16,
+            cameraHeight: 200,
+            PERSPECTIVE_SCALE: 0.5,
+            GRADIENT_INTENSITY: 1.5
         };
         
-        // Initial draw
-        this.updateWater(0);
+        // Position for scrolling effect
+        this.scrollOffset = 0;
+        this.position = { x: 0, y: 0, z: 0 };
         
-        // Draw horizon line (water meets sky)
-        water.lineStyle(3, horizonColor, 1);
-        water.beginPath();
-        water.moveTo(0, horizonY);
-        water.lineTo(width, horizonY);
-        water.strokePath();
-        
-        console.log('[ShooterScene] Pseudo-3D water created with wave animation');
+        console.log('[ShooterScene] M7-style ground with track created');
     }
     
-    updateWater(time) {
-        if (!this.waterGraphics || !this.waterConfig) return;
+    updateGround(time) {
+        if (!this.groundGraphics || !this.groundConfig) return;
         
-        const { horizonY, rows, tilesPerRow, width, height, darkBlue, lightBlue, deepBlue } = this.waterConfig;
+        const config = this.groundConfig;
+        const { horizonY, width, height } = config;
         
-        // Clear and redraw water each frame for wave animation
-        this.waterGraphics.clear();
+        // Update scroll offset for forward movement
+        this.scrollOffset = (this.scrollOffset + 2) % 100;
         
-        // Calculate wave offset for scrolling water effect
-        const waveOffset = (time * 0.001) % 1;
+        // Clear and redraw
+        this.groundGraphics.clear();
         
-        // Draw each row from horizon (far) to bottom (near)
-        for (let row = 0; row < rows; row++) {
-            // Calculate normalized depth (0 = horizon/far, 1 = near/bottom)
-            const normalizedDepth = row / (rows - 1);
+        // Draw sky
+        this.groundGraphics.fillStyle(0x87CEEB); // Light blue sky
+        this.groundGraphics.fillRect(0, 0, width, horizonY);
+        
+        // Draw horizon line
+        this.groundGraphics.lineStyle(2, 0xFF0000);
+        this.groundGraphics.beginPath();
+        this.groundGraphics.moveTo(0, horizonY);
+        this.groundGraphics.lineTo(width, horizonY);
+        this.groundGraphics.strokePath();
+        
+        // Draw ground using scanlines (M7 style)
+        for (let screenY = Math.floor(horizonY); screenY < height; screenY += config.SCANLINE_SPACING) {
+            const distanceFromHorizon = screenY - horizonY;
+            if (distanceFromHorizon <= 0) continue;
             
-            // Use exponential curve for realistic depth
-            const depthCurve = Math.pow(normalizedDepth, 1.5);
+            // Calculate perspective
+            const z = (distanceFromHorizon * config.baseScale) + this.position.z;
+            const scaleLine = config.cameraHeight / distanceFromHorizon * config.PERSPECTIVE_SCALE;
             
-            // Calculate Y positions
-            const currentY = horizonY + (height - horizonY) * depthCurve;
-            const nextDepth = Math.min(1, (row + 1) / (rows - 1));
-            const nextDepthCurve = Math.pow(nextDepth, 1.5);
-            const nextY = horizonY + (height - horizonY) * nextDepthCurve;
-            
-            // Full width coverage
-            const rowWidth = width;
-            const tileWidth = rowWidth / tilesPerRow;
-            
-            // Draw each tile in this row
-            for (let col = 0; col < tilesPerRow; col++) {
-                // Wave pattern with scrolling effect
-                const wavePhase = ((row + col + (waveOffset * tilesPerRow)) % 2) < 1;
-                const isLight = wavePhase;
-                const color = isLight ? lightBlue : darkBlue;
+            // Draw scanline
+            for (let screenX = 0; screenX < width; screenX += config.SCANLINE_SPACING) {
+                // Calculate world position
+                let worldX = (screenX - width / 2) * scaleLine;
+                let worldY = z;
                 
-                // Darken tiles further away (depth fog)
-                const depthFade = 0.3 + (normalizedDepth * 0.7);
+                let finalX = worldX - this.position.x;
+                let finalY = worldY - this.position.y;
                 
-                // Calculate tile positions
-                const tileX = col * tileWidth;
-                const nextTileX = col * tileWidth;
+                const adjustedY = finalY + this.scrollOffset;
                 
-                // Draw water tile
-                this.waterGraphics.fillStyle(color, depthFade);
-                this.waterGraphics.beginPath();
-                this.waterGraphics.moveTo(tileX, currentY);
-                this.waterGraphics.lineTo(tileX + tileWidth, currentY);
-                this.waterGraphics.lineTo(nextTileX + tileWidth, nextY);
-                this.waterGraphics.lineTo(nextTileX, nextY);
-                this.waterGraphics.closePath();
-                this.waterGraphics.fillPath();
+                // Calculate distance from track center
+                const distanceFromCenter = Math.abs(finalX);
                 
-                // Add wave highlights (white caps on far tiles)
-                if (normalizedDepth < 0.5 && isLight && Math.random() < 0.1) {
-                    const lineAlpha = (0.5 - normalizedDepth) * 0.4;
-                    this.waterGraphics.lineStyle(1, 0xFFFFFF, lineAlpha);
-                    this.waterGraphics.strokePath();
+                // Determine if pixel is on track
+                const isOnTrack = distanceFromCenter < config.TRACK_WIDTH / 2;
+                const isOnBorder = distanceFromCenter >= (config.TRACK_WIDTH / 2 - config.TRACK_BORDER_WIDTH) && 
+                                 distanceFromCenter <= config.TRACK_WIDTH / 2;
+                const isOnCenterLine = Math.abs(distanceFromCenter) < config.TRACK_CENTER_LINE_WIDTH / 2;
+                
+                // Calculate dashed center line pattern
+                const dashPattern = Math.floor(adjustedY / config.TRACK_PATTERN_LENGTH) % 2 === 0;
+                
+                // Set color
+                if (isOnBorder) {
+                    this.groundGraphics.fillStyle(config.TRACK_BORDER_COLOR);
+                } else if (isOnCenterLine && dashPattern) {
+                    this.groundGraphics.fillStyle(config.TRACK_CENTER_COLOR);
+                } else if (isOnTrack) {
+                    this.groundGraphics.fillStyle(config.TRACK_COLOR);
+                } else {
+                    // Green gradient for off-track areas
+                    const gradientProgress = Math.min(1, distanceFromHorizon / (height - horizonY) * config.GRADIENT_INTENSITY);
+                    
+                    const r = Math.floor(((config.GROUND_COLOR_NEAR >> 16) & 0xFF) * (1 - gradientProgress) + 
+                                        ((config.GROUND_COLOR_FAR >> 16) & 0xFF) * gradientProgress);
+                    const g = Math.floor(((config.GROUND_COLOR_NEAR >> 8) & 0xFF) * (1 - gradientProgress) + 
+                                        ((config.GROUND_COLOR_FAR >> 8) & 0xFF) * gradientProgress);
+                    const b = Math.floor((config.GROUND_COLOR_NEAR & 0xFF) * (1 - gradientProgress) + 
+                                        (config.GROUND_COLOR_FAR & 0xFF) * gradientProgress);
+                    
+                    const color = (r << 16) | (g << 8) | b;
+                    this.groundGraphics.fillStyle(color);
                 }
+                
+                this.groundGraphics.fillRect(screenX, screenY, config.SCANLINE_SPACING, config.SCANLINE_SPACING);
             }
         }
-    }
-    
-    createParallaxBackground() {
-        console.log('[ShooterScene] Creating parallax background layers');
-        
-        const width = this.cameras.main.width;
-        const height = this.cameras.main.height;
-        
-        // Create sky gradient
-        const sky = this.add.graphics();
-        sky.setDepth(-20);
-        
-        // Gradient from light blue (top) to darker blue (horizon)
-        const gradientSteps = 20;
-        for (let i = 0; i < gradientSteps; i++) {
-            const t = i / gradientSteps;
-            const y = i * (height * 0.6) / gradientSteps;
-            const nextY = (i + 1) * (height * 0.6) / gradientSteps;
-            
-            // Color interpolation from light to dark
-            const r = Math.floor(135 + (30 - 135) * t);
-            const g = Math.floor(206 + (144 - 206) * t);
-            const b = Math.floor(235 + (255 - 235) * t);
-            const color = (r << 16) | (g << 8) | b;
-            
-            sky.fillStyle(color, 1);
-            sky.fillRect(0, y, width, nextY - y);
-        }
-        
-        // Create distant clouds (slow parallax)
-        for (let i = 0; i < 5; i++) {
-            const cloudX = Math.random() * width;
-            const cloudY = Math.random() * (height * 0.4);
-            
-            const cloud = this.add.ellipse(
-                cloudX,
-                cloudY,
-                80 + Math.random() * 40,
-                40 + Math.random() * 20,
-                0xFFFFFF,
-                0.4
-            );
-            cloud.setDepth(-15);
-            
-            // Store for parallax movement
-            cloud.parallaxSpeed = 0.2;
-            this.waterLayers.push(cloud);
-        }
-        
-        console.log('[ShooterScene] Parallax background created');
     }
     
     createPlayerShip(width, height) {
@@ -334,11 +292,8 @@ export default class ShooterScene extends Phaser.Scene {
     update(time, delta) {
         if (!this.playerShip || !this.playerShip.active) return;
         
-        // Update water animation
-        this.updateWater(time);
-        
-        // Update parallax background
-        this.updateParallax(delta);
+        // Update ground (M7 style with track)
+        this.updateGround(time);
         
         // Handle player movement
         this.handlePlayerMovement();
@@ -371,19 +326,6 @@ export default class ShooterScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.escapeKey)) {
             this.exitShooterScene();
         }
-    }
-    
-    updateParallax(delta) {
-        // Move parallax layers
-        this.waterLayers.forEach(layer => {
-            layer.y += layer.parallaxSpeed * (delta / 16);
-            
-            // Wrap around
-            if (layer.y > this.cameras.main.height) {
-                layer.y = -50;
-                layer.x = Math.random() * this.cameras.main.width;
-            }
-        });
     }
     
     handlePlayerMovement() {
