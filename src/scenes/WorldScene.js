@@ -449,6 +449,11 @@ export default class WorldScene extends Phaser.Scene {
                 this.npcManager.handleBattleEnd();
             }
             
+            // Apply party HP states if provided
+            if (data.partyHPStates) {
+                this.applyPartyHPStates(data.partyHPStates);
+            }
+            
             // Update HUD to reflect any health changes from battle
             if (this.hudManager) {
                 this.hudManager.updateWorldPartyStats();
@@ -505,6 +510,11 @@ export default class WorldScene extends Phaser.Scene {
                 this.npcManager.handleBattleEnd();
             }
             
+            // Apply party HP states if provided
+            if (data.partyHPStates) {
+                this.applyPartyHPStates(data.partyHPStates);
+            }
+            
             // Update HUD to reflect any health changes from battle
             if (this.hudManager) {
                 this.hudManager.updateWorldPartyStats();
@@ -538,11 +548,51 @@ export default class WorldScene extends Phaser.Scene {
                 this.npcManager.updateNpcHealth(data.updatedNpcHealth);
             }
             
+            // Apply party HP states if provided
+            if (data.partyHPStates) {
+                this.applyPartyHPStates(data.partyHPStates);
+            }
+            
             // Update HUD to reflect any health changes from battle
             if (this.hudManager) {
                 this.hudManager.updateWorldPartyStats();
             }
         }
+    }
+    
+    applyPartyHPStates(hpStates) {
+        console.log('[WorldScene] ========== APPLYING PARTY HP STATES ==========');
+        console.log('[WorldScene] HP States received:', hpStates);
+        
+        // Apply player HP
+        if (hpStates.playerHP !== undefined) {
+            gameStateManager.updatePlayerHealth(hpStates.playerHP);
+            console.log(`[WorldScene] Updated player HP: ${hpStates.playerHP}/${hpStates.playerMaxHP}`);
+        }
+        
+        // Apply party member HP states
+        if (hpStates.partyMembers && hpStates.partyMembers.length > 0 && this.partyManager) {
+            hpStates.partyMembers.forEach(memberHP => {
+                console.log(`[WorldScene] Updating ${memberHP.name} HP: ${memberHP.currentHP}/${memberHP.maxHP} (Downed: ${memberHP.isDowned})`);
+                
+                // Update HP in PartyManager
+                const npcData = this.partyManager.getRecruitableNPC(memberHP.id);
+                if (npcData) {
+                    npcData.stats.health = memberHP.currentHP;
+                    npcData.isDowned = memberHP.isDowned;
+                    
+                    // Update visual state if downed
+                    if (memberHP.isDowned && npcData.gameObject) {
+                        npcData.gameObject.setAlpha(0.5);
+                        console.log(`[WorldScene]   ${memberHP.name} is downed - reduced opacity`);
+                    } else if (npcData.gameObject) {
+                        npcData.gameObject.setAlpha(1.0);
+                    }
+                }
+            });
+        }
+        
+        console.log('[WorldScene] =============================================');
     }
 
     createChargeGauge() {

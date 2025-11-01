@@ -1544,6 +1544,9 @@ export default class BattleScene extends Phaser.Scene {
     handleRecruitmentVictory(npcData) {
         console.log('[BattleScene] Ending battle after recruitment');
         
+        // Get updated HP states for all party members
+        const hpStates = this.getUpdatedPartyHPStates();
+        
         // Save player health before leaving battle
         gameStateManager.updatePlayerHealth(this.currentHP);
         console.log(`[BattleScene] Saved player health on recruitment: ${this.currentHP}/${this.maxHP}`);
@@ -1554,7 +1557,8 @@ export default class BattleScene extends Phaser.Scene {
             returnPosition: this.worldPosition,
             defeatedNpcIds: [], // Don't mark as defeated, just recruited
             recruitedNpcId: npcData.id,
-            transitionType: 'recruitment'
+            transitionType: 'recruitment',
+            partyHPStates: hpStates
         };
         
         console.log('[BattleScene] Recruitment transition data:', transitionData);
@@ -5361,12 +5365,16 @@ export default class BattleScene extends Phaser.Scene {
                         alpha: 1,
                         duration: 1000,
                         onComplete: () => {
+                            // Get updated HP states for all party members
+                            const hpStates = this.getUpdatedPartyHPStates();
+                            
                             // Prepare transition data
                             const transitionData = {
                                 battleVictory: true,
                                 returnPosition: this.worldPosition,
                                 defeatedNpcIds: this.defeatedEnemyIds,
-                                transitionType: 'victory'
+                                transitionType: 'victory',
+                                partyHPStates: hpStates
                             };
                             
                             console.log('[BattleScene] ========== VICTORY TRANSITION ==========');
