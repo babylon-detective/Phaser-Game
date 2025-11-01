@@ -2070,11 +2070,28 @@ export default class BattleScene extends Phaser.Scene {
         }
         // If dashing, velocity is controlled by dash function
 
-        // Player jump with W or Up on stick
+        // Jump with W or Up on stick - respects movement mode
         const jumpPressed = this.wasdKeys.up.isDown || this.isGamepadStickUp();
-        if (jumpPressed && this.player.body.touching.down && this.isPlayerTurn) {
-            console.log('[BattleScene] Up key pressed - jumping');
-            this.player.body.setVelocityY(-450);
+        if (jumpPressed && this.isPlayerTurn) {
+            if (this.groupMovementMode) {
+                // GROUP MOVEMENT MODE: All characters jump together
+                if (this.player.body.touching.down) {
+                    console.log('[BattleScene] Up key pressed - group jump');
+                    this.player.body.setVelocityY(-450);
+                }
+                this.partyCharacters.forEach(char => {
+                    if (char.body && char.body.touching.down) {
+                        char.body.setVelocityY(-450);
+                    }
+                });
+            } else {
+                // INDIVIDUAL CHARACTER CONTROL MODE: Only active character jumps
+                const activeChar = this.getActiveCharacterObject();
+                if (activeChar && activeChar.body && activeChar.body.touching.down) {
+                    console.log('[BattleScene] Up key pressed - individual jump (char', this.activeCharacterIndex, ')');
+                    activeChar.body.setVelocityY(-450);
+                }
+            }
         }
 
         // Update enemy health and level displays
@@ -2091,6 +2108,15 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     updatePartyIndicators() {
+        // Update player indicator (leader)
+        if (this.player && this.player.active && this.playerIndicator) {
+            this.playerIndicator.setPosition(
+                this.player.x,
+                this.player.y - 40
+            );
+        }
+        
+        // Update party character indicators
         if (!this.partyCharacters || this.partyCharacters.length === 0) return;
         
         this.partyCharacters.forEach(character => {

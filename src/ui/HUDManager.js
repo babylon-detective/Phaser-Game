@@ -85,66 +85,63 @@ export default class HUDManager {
     updateWorldPartyStats() {
         if (!this.elements.partyPanel) return;
         
-        const playerStats = gameStateManager.getPlayerStats();
         const money = moneyManager.getMoney();
         
-        // Get party members from WorldScene's PartyManager if available
+        // Get party in LEADERSHIP ORDER from PartyLeadershipManager
         const worldScene = this.scene;
-        const partyMembers = worldScene.partyManager && worldScene.partyManager.partyMembers 
-            ? worldScene.partyManager.partyMembers 
-            : [];
+        const partyLeadershipManager = worldScene.partyLeadershipManager || window.partyLeadershipManager;
         
-        // Build HTML for player + party members
+        if (!partyLeadershipManager) {
+            console.warn('[HUDManager] PartyLeadershipManager not available');
+            return;
+        }
+        
+        const party = partyLeadershipManager.getParty(); // Array with leader at index 0
+        
+        // Build HTML for all party members in leadership order
         let partyHTML = '';
         
-        // Player stats (always first)
-        partyHTML += `
-            <div class="character-panel" style="background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 10px; padding: 10px; min-width: 140px;">
-                <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
-                    <div style="width: 10px; height: 10px; background: #ff0000; border-radius: 2px;"></div>
-                    <div class="hud-title" style="margin: 0; font-size: 13px;">PLAYER</div>
-                </div>
-                <div class="stat-row" style="font-size: 11px;">
-                    <span class="stat-label">HP:</span>
-                    <div class="stat-bar-container" style="flex: 1; height: 6px;">
-                        <div class="stat-bar health-bar" id="world-player-health-bar" style="width: ${(playerStats.health / playerStats.maxHealth) * 100}%;"></div>
-                    </div>
-                    <span class="stat-value" id="world-player-health" style="font-size: 10px;">${playerStats.health}/${playerStats.maxHealth}</span>
-                </div>
-                <div class="stat-row" style="font-size: 10px;">
-                    <span class="stat-label">Lvl:</span>
-                    <span class="stat-value" id="world-player-level">${playerStats.level}</span>
-                    <span class="stat-label" style="margin-left: 8px;">💰</span>
-                    <span class="stat-value" id="world-player-money" style="color: #FFD700;">${money}</span>
-                </div>
-            </div>
-        `;
-        
-        // Party member stats
-        partyMembers.forEach((member, index) => {
+        party.forEach((member, index) => {
             if (!member) return;
             
+            const isLeader = (index === 0);
             const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
-            const hpPercent = (member.stats.health / member.stats.health) * 100; // Current HP = max for now
+            
+            // Get health from stats or fallback to gameStateManager for original player
+            let currentHealth, maxHealth;
+            if (member.isOriginalPlayer) {
+                const playerStats = gameStateManager.getPlayerStats();
+                currentHealth = playerStats.health;
+                maxHealth = playerStats.maxHealth;
+            } else {
+                currentHealth = member.stats.health;
+                maxHealth = member.stats.maxHealth || member.stats.health;
+            }
+            
+            const hpPercent = (currentHealth / maxHealth) * 100;
+            
+            // Leader gets crown emoji
+            const leaderIndicator = isLeader ? '👑 ' : '';
             
             partyHTML += `
-                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px; padding: 10px; min-width: 140px;">
+                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; ${isLeader ? 'box-shadow: 0 0 10px ' + colorHex + ';' : ''} border-radius: 10px; padding: 10px; min-width: 140px;">
                     <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
                         <div style="width: 10px; height: 10px; background: ${colorHex}; border-radius: 2px;"></div>
-                        <div class="hud-title" style="margin: 0; font-size: 13px;">${member.name.toUpperCase()}</div>
+                        <div class="hud-title" style="margin: 0; font-size: 13px;">${leaderIndicator}${member.name.toUpperCase()}</div>
                     </div>
                     <div class="stat-row" style="font-size: 11px;">
                         <span class="stat-label">HP:</span>
                         <div class="stat-bar-container" style="flex: 1; height: 6px;">
                             <div class="stat-bar health-bar" id="world-party-${index}-health-bar" style="width: ${hpPercent}%; background: ${colorHex};"></div>
                         </div>
-                        <span class="stat-value" id="world-party-${index}-health" style="font-size: 10px;">${member.stats.health}/${member.stats.health}</span>
+                        <span class="stat-value" id="world-party-${index}-health" style="font-size: 10px;">${currentHealth}/${maxHealth}</span>
                     </div>
                     <div class="stat-row" style="font-size: 10px;">
                         <span class="stat-label">Lvl:</span>
                         <span class="stat-value">${member.stats.level}</span>
-                        <span class="stat-label" style="margin-left: 8px;">Atk:</span>
-                        <span class="stat-value">${member.stats.attack}</span>
+                        ${isLeader ? `<span class="stat-label" style="margin-left: 8px;">💰</span>
+                        <span class="stat-value" id="world-player-money" style="color: #FFD700;">${money}</span>` : `<span class="stat-label" style="margin-left: 8px;">Atk:</span>
+                        <span class="stat-value">${member.stats.attack}</span>`}
                     </div>
                 </div>
             `;
@@ -194,70 +191,76 @@ export default class HUDManager {
             return;
         }
         
-        const playerStats = gameStateManager.getPlayerStats();
+        const battleScene = this.scene;
         const money = moneyManager.getMoney();
         
-        // Get party members from BattleScene if available
-        const battleScene = this.scene;
-        const partyMembers = battleScene.partyCharacters || [];
+        // Build party array in LEADERSHIP ORDER (leader first, then followers)
+        // BattleScene receives party in leadership order from init(data)
+        const party = [];
         
-        console.log(`[HUDManager] Battle Scene:`, battleScene.scene.key);
-        console.log(`[HUDManager] Party members count:`, partyMembers.length);
-        console.log(`[HUDManager] Party members:`, partyMembers);
+        // Leader (playerData)
+        if (battleScene.playerData) {
+            const playerStats = gameStateManager.getPlayerStats();
+            party.push({
+                name: battleScene.playerData.name || 'Player',
+                color: battleScene.playerData.color || 0x808080,
+                indicatorColor: battleScene.playerData.indicatorColor || 0xff0000,
+                currentHP: battleScene.currentHP || playerStats.health,
+                maxHP: battleScene.maxHP || playerStats.maxHealth,
+                level: playerStats.level,
+                isLeader: true,
+                isOriginalPlayer: battleScene.playerData.isOriginalPlayer
+            });
+        }
         
-        // Build HTML for player + party members
+        // Followers (partyMembersData)
+        if (battleScene.partyMembersData && battleScene.partyMembersData.length > 0) {
+            battleScene.partyMembersData.forEach((memberData, index) => {
+                party.push({
+                    name: memberData.name,
+                    color: memberData.color,
+                    indicatorColor: memberData.indicatorColor,
+                    currentHP: memberData.stats?.health || 100,
+                    maxHP: memberData.stats?.maxHealth || 100,
+                    level: memberData.stats?.level || 1,
+                    attack: memberData.stats?.attack || 10,
+                    isLeader: false
+                });
+            });
+        }
+        
+        console.log(`[HUDManager] Battle party:`, party.map(p => p.name).join(', '));
+        
+        // Build HTML for all party members in leadership order
         let partyHTML = '';
         
-        // Player stats (always first)
-        partyHTML += `
-            <div class="character-panel" style="background: rgba(255, 0, 0, 0.1); border: 2px solid #ff0000; border-radius: 10px; padding: 10px; min-width: 150px;">
-                <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
-                    <div style="width: 10px; height: 10px; background: #ff0000; border-radius: 2px;"></div>
-                    <div class="hud-title" style="margin: 0; font-size: 14px;">PLAYER</div>
-                </div>
-                <div class="stat-row" style="font-size: 12px;">
-                    <span class="stat-label">HP:</span>
-                    <div class="stat-bar-container" style="flex: 1; height: 8px;">
-                        <div class="stat-bar health-bar" id="battle-player-health-bar" style="width: ${(playerStats.health / playerStats.maxHealth) * 100}%;"></div>
-                    </div>
-                    <span class="stat-value" id="battle-player-health" style="font-size: 11px;">${playerStats.health}/${playerStats.maxHealth}</span>
-                </div>
-                <div class="stat-row" style="font-size: 11px;">
-                    <span class="stat-label">Lvl:</span>
-                    <span class="stat-value" id="battle-player-level">${playerStats.level}</span>
-                    <span class="stat-label" style="margin-left: 10px;">💰</span>
-                    <span class="stat-value" id="battle-player-money" style="color: #FFD700;">${money}</span>
-                </div>
-            </div>
-        `;
-        
-        // Party member stats
-        partyMembers.forEach((character, index) => {
-            const memberData = character.memberData;
-            if (!memberData) return;
+        party.forEach((member, index) => {
+            const isLeader = member.isLeader;
+            const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+            const hpPercent = (member.currentHP / member.maxHP) * 100;
             
-            const colorHex = '#' + memberData.indicatorColor.toString(16).padStart(6, '0');
-            const hpPercent = (memberData.currentHP / memberData.maxHP) * 100;
-            const keyNumber = index + 2; // Keys 2, 3, 4
+            // Leader gets crown emoji
+            const leaderIndicator = isLeader ? '👑 ' : '';
             
             partyHTML += `
-                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px; padding: 10px; min-width: 150px;">
+                <div class="character-panel" style="background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; ${isLeader ? 'box-shadow: 0 0 10px ' + colorHex + ';' : ''} border-radius: 10px; padding: 10px; min-width: 150px;">
                     <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
                         <div style="width: 10px; height: 10px; background: ${colorHex}; border-radius: 2px;"></div>
-                        <div class="hud-title" style="margin: 0; font-size: 14px;">${memberData.name.toUpperCase()}</div>
+                        <div class="hud-title" style="margin: 0; font-size: 14px;">${leaderIndicator}${member.name.toUpperCase()}</div>
                     </div>
                     <div class="stat-row" style="font-size: 12px;">
                         <span class="stat-label">HP:</span>
                         <div class="stat-bar-container" style="flex: 1; height: 8px;">
-                            <div class="stat-bar health-bar" id="party-${index}-health-bar" style="width: ${hpPercent}%; background: ${colorHex};"></div>
+                            <div class="stat-bar health-bar" id="battle-party-${index}-health-bar" style="width: ${hpPercent}%; background: ${colorHex};"></div>
                         </div>
-                        <span class="stat-value" id="party-${index}-health" style="font-size: 11px;">${memberData.currentHP}/${memberData.maxHP}</span>
+                        <span class="stat-value" id="battle-party-${index}-health" style="font-size: 11px;">${member.currentHP}/${member.maxHP}</span>
                     </div>
                     <div class="stat-row" style="font-size: 11px;">
                         <span class="stat-label">Lvl:</span>
-                        <span class="stat-value">${memberData.stats.level}</span>
-                        <span class="stat-label" style="margin-left: 10px;">Atk:</span>
-                        <span class="stat-value">${memberData.stats.attack}</span>
+                        <span class="stat-value">${member.level}</span>
+                        ${isLeader ? `<span class="stat-label" style="margin-left: 10px;">💰</span>
+                        <span class="stat-value" id="battle-player-money" style="color: #FFD700;">${money}</span>` : `<span class="stat-label" style="margin-left: 10px;">Atk:</span>
+                        <span class="stat-value">${member.attack}</span>`}
                     </div>
                 </div>
             `;
@@ -265,7 +268,7 @@ export default class HUDManager {
         
         this.elements.partyPanel.innerHTML = partyHTML;
         
-        console.log(`[HUDManager] ✅ Battle party HUD updated with ${partyMembers.length} party members`);
+        console.log(`[HUDManager] ✅ Battle party HUD updated with ${party.length} members`);
         console.log('[HUDManager] ===================================================');
     }
 

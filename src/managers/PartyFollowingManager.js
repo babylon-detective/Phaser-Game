@@ -18,18 +18,28 @@ export default class PartyFollowingManager {
      * @param {Array} party - Array from PartyLeadershipManager (leader at index 0)
      */
     update(party) {
+        if (party.length < 1) return; // No party members
+
+        // Leader's indicator is managed by WorldControls (shows movement direction)
+        // We only ensure it's visible and positioned above the leader
+        const leader = party[0];
+        if (leader && leader.sprite && leader.indicator) {
+            leader.indicator.setVisible(true);
+            // Position is handled by WorldControls.update() to show direction
+        }
+
         if (party.length < 2) return; // No followers to update
 
         // Each follower (index 1+) follows the character in front of them
         for (let i = 1; i < party.length; i++) {
             const follower = party[i];
-            const leader = party[i - 1]; // The character in front
+            const leaderInFront = party[i - 1]; // The character in front
 
-            if (!follower.sprite || !leader.sprite) continue;
+            if (!follower.sprite || !leaderInFront.sprite) continue;
 
             // Calculate target position (behind the leader)
-            const targetX = leader.sprite.x - this.followDistance;
-            const targetY = leader.sprite.y;
+            const targetX = leaderInFront.sprite.x - this.followDistance;
+            const targetY = leaderInFront.sprite.y;
 
             // Calculate distance to target
             const dx = targetX - follower.sprite.x;
@@ -41,14 +51,15 @@ export default class PartyFollowingManager {
                 // Smooth movement towards target
                 follower.sprite.x += dx * this.followSpeed;
                 follower.sprite.y += dy * this.followSpeed;
-
-                // Update indicator position to stay above follower
-                if (follower.indicator) {
-                    follower.indicator.setPosition(
-                        follower.sprite.x,
-                        follower.sprite.y - 40
-                    );
-                }
+            }
+            
+            // ALWAYS update indicator position to stay above follower (not just when moving)
+            if (follower.indicator) {
+                follower.indicator.setVisible(true);
+                follower.indicator.setPosition(
+                    follower.sprite.x,
+                    follower.sprite.y - 40
+                );
             }
         }
     }

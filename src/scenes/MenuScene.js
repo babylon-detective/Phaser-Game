@@ -3,6 +3,7 @@ import { gameStateManager } from "../managers/GameStateManager.js";
 import { moneyManager } from "../managers/MoneyManager.js";
 import { itemsManager } from "../managers/ItemsManager.js";
 import { skillsManager } from "../managers/SkillsManager.js";
+import { partyLeadershipManager } from "../managers/PartyLeadershipManager.js";
 
 export default class MenuScene extends Phaser.Scene {
     constructor() {
@@ -31,11 +32,13 @@ export default class MenuScene extends Phaser.Scene {
         this.worldScene = this.scene.get('WorldScene');
         console.log('[MenuScene] Player on save point:', this.isOnSavePoint);
         
-        // Define tabs based on save point status
-        this.tabs = ['Player Stats', 'Skills', 'Items'];
-        if (this.isOnSavePoint) {
-            this.tabs.push('Save Game');
-        }
+        // Get party members from PartyLeadershipManager (in leadership order)
+        const party = partyLeadershipManager.getParty();
+        console.log('[MenuScene] Party members:', party.map(p => p.name).join(', '));
+        
+        // Create tabs for each party member (leader first)
+        this.partyMembers = party;
+        this.selectedMemberIndex = 0; // Start with leader selected
     }
 
     create() {
@@ -115,33 +118,24 @@ export default class MenuScene extends Phaser.Scene {
             return;
         }
         
-        // Handle tab navigation with WASD or left stick
+        // Handle character tab navigation with A/D (left/right) or left stick
         const navLeft = Phaser.Input.Keyboard.JustDown(this.wasdKeys.left) || 
-                        Phaser.Input.Keyboard.JustDown(this.wasdKeys.up) ||
-                        this.isGamepadStickLeft() || this.isGamepadStickUp();
+                        this.isGamepadStickLeft();
         const navRight = Phaser.Input.Keyboard.JustDown(this.wasdKeys.right) || 
-                         Phaser.Input.Keyboard.JustDown(this.wasdKeys.down) ||
-                         this.isGamepadStickRight() || this.isGamepadStickDown();
+                         this.isGamepadStickRight();
         
         if (navLeft) {
-            console.log('[MenuScene] Navigating to previous tab');
-            this.selectedTabIndex = (this.selectedTabIndex - 1 + this.tabs.length) % this.tabs.length;
-            console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
-            this.updateTabSelection();
+            console.log('[MenuScene] Navigating to previous character');
+            this.selectedMemberIndex = (this.selectedMemberIndex - 1 + this.partyMembers.length) % this.partyMembers.length;
+            console.log('[MenuScene] Selected member index:', this.selectedMemberIndex, '-', this.partyMembers[this.selectedMemberIndex].name);
+            this.updateCharacterSelection();
         }
         
         if (navRight) {
-            console.log('[MenuScene] Navigating to next tab');
-            this.selectedTabIndex = (this.selectedTabIndex + 1) % this.tabs.length;
-            console.log('[MenuScene] Selected tab index:', this.selectedTabIndex, '-', this.tabs[this.selectedTabIndex]);
-            this.updateTabSelection();
-        }
-        
-        // Handle tab activation with U key or A button
-        if (Phaser.Input.Keyboard.JustDown(this.actionKey) || this.isGamepadButtonJustPressed(0)) {
-            console.log('[MenuScene] U/A button pressed!');
-            console.log('[MenuScene] Current tab:', this.tabs[this.selectedTabIndex]);
-            this.activateCurrentTab();
+            console.log('[MenuScene] Navigating to next character');
+            this.selectedMemberIndex = (this.selectedMemberIndex + 1) % this.partyMembers.length;
+            console.log('[MenuScene] Selected member index:', this.selectedMemberIndex, '-', this.partyMembers[this.selectedMemberIndex].name);
+            this.updateCharacterSelection();
         }
     }
 
@@ -249,36 +243,38 @@ export default class MenuScene extends Phaser.Scene {
         `;
         this.menuContainer.appendChild(this.timerElement);
 
-        // Create tab container (left side)
+        // Create character tabs container (horizontal at top)
         this.tabContainer = document.createElement('div');
         this.tabContainer.id = 'menu-tabs-container';
         this.tabContainer.style.cssText = `
             position: absolute;
             top: 20px;
-            left: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             gap: 15px;
         `;
         this.menuContainer.appendChild(this.tabContainer);
 
-        // Create tab buttons
-        this.createTabButtons();
+        // Create character tab buttons
+        this.createCharacterTabs();
         
-        // Create content panel for selected tab
+        // Create content panel for selected character
         this.contentPanel = document.createElement('div');
-        this.contentPanel.id = 'tab-content-panel';
+        this.contentPanel.id = 'character-content-panel';
         this.contentPanel.style.cssText = `
             position: absolute;
-            top: 20px;
-            left: 280px;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.9);
             color: #FFF;
-            padding: 20px;
+            padding: 25px;
             border: 2px solid #4A90E2;
             border-radius: 10px;
-            min-width: 300px;
-            max-width: 400px;
+            min-width: 500px;
+            max-width: 600px;
             box-shadow: 0 0 20px rgba(74, 144, 226, 0.5);
         `;
         this.menuContainer.appendChild(this.contentPanel);
@@ -298,76 +294,177 @@ export default class MenuScene extends Phaser.Scene {
             text-align: center;
         `;
         this.controlsHint.innerHTML = `
-            <span style="color: #FFD700;">WASD</span> Navigate • 
-            <span style="color: #FFD700;">U</span> Select • 
+            <span style="color: #FFD700;">A/D</span> or <span style="color: #FFD700;">←/→</span> Switch Character • 
             <span style="color: #FFD700;">/</span> or <span style="color: #FFD700;">ESC</span> Close
         `;
         this.menuContainer.appendChild(this.controlsHint);
 
-        // Update content for first tab
-        this.updateTabSelection();
+        // Update content for first character
+        this.updateCharacterSelection();
 
         console.log('[MenuScene] Menu UI created');
     }
     
-    createTabButtons() {
-        this.tabs.forEach((tabName, index) => {
+    createCharacterTabs() {
+        this.partyMembers.forEach((member, index) => {
+            const isLeader = (index === 0);
+            const isSelected = (index === this.selectedMemberIndex);
+            const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+            
             const tabButton = document.createElement('div');
-            tabButton.id = `tab-button-${index}`;
-            tabButton.className = 'menu-tab-button';
+            tabButton.id = `character-tab-${index}`;
+            tabButton.className = 'character-tab-button';
             tabButton.style.cssText = `
-                background: rgba(0, 0, 0, 0.8);
-                color: #FFF;
+                background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, ${isSelected ? 0.3 : 0.1});
+                color: ${colorHex};
                 padding: 15px 20px;
-                border: 2px solid ${index === this.selectedTabIndex ? '#FFD700' : '#4A90E2'};
-                border-radius: 8px;
-                font-size: 18px;
+                border: 3px solid ${isSelected ? '#FFD700' : colorHex};
+                border-radius: 10px;
+                font-size: 16px;
                 font-weight: bold;
                 cursor: pointer;
                 pointer-events: auto;
                 transition: all 0.3s;
-                box-shadow: ${index === this.selectedTabIndex ? '0 0 20px rgba(255, 215, 0, 0.6)' : '0 0 10px rgba(74, 144, 226, 0.3)'};
-                min-width: 220px;
+                box-shadow: ${isSelected ? `0 0 20px rgba(255, 215, 0, 0.8)` : `0 0 10px ${colorHex}40`};
+                min-width: 150px;
                 text-align: center;
             `;
             
             // Add visual indicator for selected tab
             tabButton.innerHTML = `
-                ${index === this.selectedTabIndex ? '> ' : ''}${tabName}${index === this.selectedTabIndex ? ' <' : ''}
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                    <div style="width: 12px; height: 12px; background: ${colorHex}; border-radius: 3px;"></div>
+                    <div>${isLeader ? '👑 ' : ''}${member.name.toUpperCase()}</div>
+                    ${isSelected ? '<div style="font-size: 12px; color: #FFD700;">▼ SELECTED ▼</div>' : ''}
+                </div>
             `;
             
             this.tabContainer.appendChild(tabButton);
         });
     }
 
-    updateTabSelection() {
+    updateCharacterSelection() {
         // Update tab button styles
-        this.tabs.forEach((tabName, index) => {
-            const tabButton = document.getElementById(`tab-button-${index}`);
+        this.partyMembers.forEach((member, index) => {
+            const tabButton = document.getElementById(`character-tab-${index}`);
             if (tabButton) {
-                const isSelected = index === this.selectedTabIndex;
-                tabButton.style.border = `2px solid ${isSelected ? '#FFD700' : '#4A90E2'}`;
-                tabButton.style.boxShadow = isSelected ? '0 0 20px rgba(255, 215, 0, 0.6)' : '0 0 10px rgba(74, 144, 226, 0.3)';
-                tabButton.innerHTML = `${isSelected ? '> ' : ''}${tabName}${isSelected ? ' <' : ''}`;
+                const isLeader = (index === 0);
+                const isSelected = (index === this.selectedMemberIndex);
+                const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+                
+                tabButton.style.background = `rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, ${isSelected ? 0.3 : 0.1})`;
+                tabButton.style.border = `3px solid ${isSelected ? '#FFD700' : colorHex}`;
+                tabButton.style.boxShadow = isSelected ? `0 0 20px rgba(255, 215, 0, 0.8)` : `0 0 10px ${colorHex}40`;
+                
+                tabButton.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                        <div style="width: 12px; height: 12px; background: ${colorHex}; border-radius: 3px;"></div>
+                        <div>${isLeader ? '👑 ' : ''}${member.name.toUpperCase()}</div>
+                        ${isSelected ? '<div style="font-size: 12px; color: #FFD700;">▼ SELECTED ▼</div>' : ''}
+                    </div>
+                `;
             }
         });
         
-        // Update content panel based on selected tab
-        this.updateTabContent();
+        // Update content panel based on selected character
+        this.updateCharacterContent();
     }
     
-    updateTabContent() {
-        const currentTab = this.tabs[this.selectedTabIndex];
+    updateCharacterContent() {
+        const selectedMember = this.partyMembers[this.selectedMemberIndex];
+        if (!selectedMember) return;
         
-        if (currentTab === 'Player Stats') {
-            this.showPlayerStatsContent();
-        } else if (currentTab === 'Skills') {
-            this.showSkillsContent();
-        } else if (currentTab === 'Items') {
-            this.showItemsContent();
-        } else if (currentTab === 'Save Game') {
-            this.showSaveGameContent();
+        this.showCharacterStats(selectedMember, this.selectedMemberIndex);
+    }
+    
+    showCharacterStats(member, index) {
+        const isLeader = (index === 0);
+        const colorHex = '#' + member.indicatorColor.toString(16).padStart(6, '0');
+        const money = moneyManager.getMoney();
+        
+        // Get stats from different sources depending on whether it's the original player or a recruited member
+        let stats, currentHP, maxHP;
+        if (member.isOriginalPlayer) {
+            stats = gameStateManager.getPlayerStats();
+            currentHP = stats.health;
+            maxHP = stats.maxHealth;
+        } else {
+            stats = member.stats;
+            currentHP = stats.health;
+            maxHP = stats.maxHealth || stats.health;
         }
+        
+        const hpPercent = (currentHP / maxHP) * 100;
+        const xpPercent = (stats.experience / stats.experienceToNextLevel) * 100;
+        
+        let contentHTML = `
+            <div style="font-size: 22px; font-weight: bold; margin-bottom: 15px; color: ${colorHex}; border-bottom: 2px solid ${colorHex}; padding-bottom: 10px;">
+                ${isLeader ? '👑 ' : ''}${member.name.toUpperCase()}'S STATS
+                ${isLeader ? '<span style="font-size: 14px; color: #FFD700; margin-left: 10px;">(LEADER)</span>' : ''}
+            </div>
+            
+            ${isLeader ? `
+            <div style="margin-bottom: 15px; padding: 12px; background: rgba(255, 215, 0, 0.1); border: 2px solid #FFD700; border-radius: 8px; text-align: center;">
+                <div style="color: #FFD700; font-weight: bold; font-size: 24px;">
+                    💰 ${money} Gold
+                </div>
+            </div>
+            ` : ''}
+            
+            <div style="margin-bottom: 12px; padding: 15px; background: rgba(${parseInt(colorHex.substr(1,2), 16)}, ${parseInt(colorHex.substr(3,2), 16)}, ${parseInt(colorHex.substr(5,2), 16)}, 0.1); border: 2px solid ${colorHex}; border-radius: 10px;">
+                <div style="margin-bottom: 10px;">
+                    <div style="color: #FFD700; font-weight: bold; margin-bottom: 5px; font-size: 18px;">
+                        Level ${stats.level}
+                    </div>
+                    <div style="font-size: 12px; color: #AAA; margin-bottom: 3px;">
+                        XP: ${stats.experience} / ${stats.experienceToNextLevel}
+                    </div>
+                    <div style="background: #333; height: 10px; border-radius: 5px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, ${colorHex}, #00D9FF); height: 100%; width: ${xpPercent}%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                        <span style="color: #AAA; font-weight: bold;">Health:</span>
+                        <span style="color: #FF4757; font-weight: bold; font-size: 16px;">${currentHP} / ${maxHP}</span>
+                    </div>
+                    <div style="background: #333; height: 10px; border-radius: 5px; overflow: hidden;">
+                        <div style="background: linear-gradient(90deg, #FF4757, #FF6B81); height: 100%; width: ${hpPercent}%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA; font-weight: bold;">Attack:</span>
+                    <span style="color: #FFA502; font-weight: bold; font-size: 16px;">${stats.attack}</span>
+                </div>
+
+                <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA; font-weight: bold;">Defense:</span>
+                    <span style="color: #57E389; font-weight: bold; font-size: 16px;">${stats.defense}</span>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #AAA; font-weight: bold;">Speed:</span>
+                    <span style="color: #00D9FF; font-weight: bold; font-size: 16px;">${stats.speed}</span>
+                </div>
+            </div>
+            
+            ${member.abilities && member.abilities.length > 0 ? `
+            <div style="margin-top: 20px;">
+                <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: ${colorHex};">
+                    🗡️ Abilities
+                </div>
+                ${member.abilities.map(ability => `
+                    <div style="padding: 8px; margin-bottom: 5px; background: rgba(74, 144, 226, 0.1); border: 1px solid #4A90E2; border-radius: 5px;">
+                        <span style="color: #FFF; font-weight: bold;">${ability}</span>
+                    </div>
+                `).join('')}
+            </div>
+            ` : ''}
+        `;
+        
+        this.contentPanel.innerHTML = contentHTML;
     }
     
     showPlayerStatsContent() {

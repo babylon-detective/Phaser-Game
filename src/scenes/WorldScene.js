@@ -135,6 +135,9 @@ export default class WorldScene extends Phaser.Scene {
         this.playerManager = new PlayerManager(this);
         this.playerManager.create();
         
+        // Store reference to party leadership manager for HUD access
+        this.partyLeadershipManager = partyLeadershipManager;
+        
         // Initialize party leadership with player as leader
         partyLeadershipManager.initializeParty(
             this.playerManager.player,
@@ -645,9 +648,14 @@ export default class WorldScene extends Phaser.Scene {
             // Q key or D-pad Left (button 14) - Rotate left
             if (Phaser.Input.Keyboard.JustDown(qKey) || this.isGamepadButtonJustPressed(14)) {
                 console.log('[WorldScene] Q/D-pad Left pressed - rotating leader left');
+                // Store current leader position BEFORE rotation
+                const currentLeader = partyLeadershipManager.getLeader();
+                const oldLeaderPos = currentLeader && currentLeader.sprite ? 
+                    { x: currentLeader.sprite.x, y: currentLeader.sprite.y } : null;
+                
                 const newLeader = partyLeadershipManager.rotateLeft();
                 if (newLeader) {
-                    this.switchControlToLeader(newLeader);
+                    this.switchControlToLeader(newLeader, oldLeaderPos);
                     this.leaderRotateCooldown = this.leaderRotateDelay;
                 }
             }
@@ -655,9 +663,14 @@ export default class WorldScene extends Phaser.Scene {
             // E key or D-pad Right (button 15) - Rotate right
             if (Phaser.Input.Keyboard.JustDown(eKey) || this.isGamepadButtonJustPressed(15)) {
                 console.log('[WorldScene] E/D-pad Right pressed - rotating leader right');
+                // Store current leader position BEFORE rotation
+                const currentLeader = partyLeadershipManager.getLeader();
+                const oldLeaderPos = currentLeader && currentLeader.sprite ? 
+                    { x: currentLeader.sprite.x, y: currentLeader.sprite.y } : null;
+                
                 const newLeader = partyLeadershipManager.rotateRight();
                 if (newLeader) {
-                    this.switchControlToLeader(newLeader);
+                    this.switchControlToLeader(newLeader, oldLeaderPos);
                     this.leaderRotateCooldown = this.leaderRotateDelay;
                 }
             }
@@ -825,7 +838,7 @@ export default class WorldScene extends Phaser.Scene {
      * Switch control from current leader to new leader
      * Updates PlayerManager and camera to follow the new leader
      */
-    switchControlToLeader(newLeader) {
+    switchControlToLeader(newLeader, oldLeaderPosition = null) {
         console.log(`[WorldScene] ======== SWITCHING CONTROL TO ${newLeader.name} ========`);
         
         if (!newLeader.sprite) {
@@ -833,25 +846,66 @@ export default class WorldScene extends Phaser.Scene {
             return;
         }
         
-        // Stop all character velocities to prevent carryover
+        // Get the party after rotation
         const party = partyLeadershipManager.getParty();
+        
+        // Stop all character velocities to prevent carryover
         party.forEach(member => {
             if (member.sprite && member.sprite.body) {
                 member.sprite.body.setVelocity(0, 0);
             }
         });
         
+        // CRITICAL: Move the new leader to the old leader's position to prevent party shift
+        if (oldLeaderPosition && newLeader.sprite) {
+            const offsetX = oldLeaderPosition.x - newLeader.sprite.x;
+            const offsetY = oldLeaderPosition.y - newLeader.sprite.y;
+            
+            // Move the entire party by this offset to maintain formation
+            party.forEach(member => {
+                if (member.sprite) {
+                    member.sprite.x += offsetX;
+                    member.sprite.y += offsetY;
+                    if (member.sprite.body) {
+                        member.sprite.body.reset(member.sprite.x, member.sprite.y);
+                    }
+                }
+            });
+            
+            console.log(`[WorldScene] ✅ Adjusted party position to prevent shift (offset: ${offsetX.toFixed(1)}, ${offsetY.toFixed(1)})`);
+        }
+        
         // Update PlayerManager to control the new leader sprite
         if (this.playerManager) {
             this.playerManager.player = newLeader.sprite;
             
-            // Update WorldControls reference to the new leader
+            // Update WorldControls reference to the new leader AND its indicator
             if (this.playerManager.controls) {
                 this.playerManager.controls.player = newLeader.sprite;
+                
+                // CRITICAL: Transfer the direction indicator to the new leader
+                // Don't hide the old indicator - let PartyFollowingManager manage it
+                if (this.playerManager.controls.directionIndicator) {
+                    // Keep old indicator visible if it's not the new leader's indicator
+                    if (this.playerManager.controls.directionIndicator !== newLeader.indicator) {
+                        this.playerManager.controls.directionIndicator.setVisible(true);
+                    }
+                }
+                
+                // Set the new leader's indicator as the active direction indicator
+                this.playerManager.controls.directionIndicator = newLeader.indicator;
+                
+                // Update the indicator color to match the new leader
+                if (newLeader.indicator) {
+                    newLeader.indicator.setFillStyle(newLeader.indicatorColor);
+                    newLeader.indicator.setVisible(true);
+                }
+                
                 // Reset movement state
                 this.playerManager.controls.isRunning = false;
                 this.playerManager.controls.isCharging = false;
                 console.log(`[WorldScene] ✅ Controls now operate ${newLeader.name}`);
+                console.log(`[WorldScene] ✅ Direction indicator transferred to ${newLeader.name} (color: 0x${newLeader.indicatorColor.toString(16)})`);
             }
         }
         
