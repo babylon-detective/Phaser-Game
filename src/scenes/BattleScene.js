@@ -146,7 +146,7 @@ export default class BattleScene extends Phaser.Scene {
             console.log('[BattleScene] 👥 Followers (party):', this.partyMembersData.map(m => m.name).join(', '));
         } else {
             // Fallback to old system if no party data
-            this.playerData = data.playerData;
+        this.playerData = data.playerData;
             this.partyMembersData = [];
             console.warn('[BattleScene] No party data - using legacy playerData');
         }
@@ -1943,7 +1943,7 @@ export default class BattleScene extends Phaser.Scene {
             this.returnToWorld();
             return;
         }
-        
+
         // Check for battle menu (keyboard / or gamepad Select - button 8)
         if (Phaser.Input.Keyboard.JustDown(this.slashKey) || this.isGamepadButtonJustPressed(8)) {
             console.log('[BattleScene] //Select pressed, opening Battle Menu');
@@ -2021,7 +2021,7 @@ export default class BattleScene extends Phaser.Scene {
                     console.log('[BattleScene] Group movement - Left');
                     // Move player if not downed
                     if (!this.isPlayerDowned) {
-                        this.player.body.setVelocityX(-300);
+                this.player.body.setVelocityX(-300);
                     }
                     // Move party members if not downed
                     this.partyCharacters.forEach(char => {
@@ -2029,12 +2029,12 @@ export default class BattleScene extends Phaser.Scene {
                             char.body.setVelocityX(-300);
                         }
                     });
-                    this.isMoving = true;
+                this.isMoving = true;
                 } else if (moveRight) {
                     console.log('[BattleScene] Group movement - Right');
                     // Move player if not downed
                     if (!this.isPlayerDowned) {
-                        this.player.body.setVelocityX(300);
+                this.player.body.setVelocityX(300);
                     }
                     // Move party members if not downed
                     this.partyCharacters.forEach(char => {
@@ -2042,20 +2042,20 @@ export default class BattleScene extends Phaser.Scene {
                             char.body.setVelocityX(300);
                         }
                     });
-                    this.isMoving = true;
-                } else {
+                this.isMoving = true;
+            } else {
                     // Stop all characters
                     if (!this.isPlayerDowned) {
-                        this.player.body.setVelocityX(0);
+                this.player.body.setVelocityX(0);
                     }
                     this.partyCharacters.forEach(char => {
                         if (char.body && (!char.memberData || !char.memberData.isDowned)) {
                             char.body.setVelocityX(0);
                         }
                     });
-                    this.isMoving = false;
-                }
-            } else {
+                this.isMoving = false;
+            }
+        } else {
                 // INDIVIDUAL CHARACTER CONTROL MODE (keys 1-4): Only selected character moves (if not downed)
                 const activeChar = this.getActiveCharacterObject();
                 const isActiveCharDowned = (activeChar === this.player && this.isPlayerDowned) || 
@@ -2108,7 +2108,7 @@ export default class BattleScene extends Phaser.Scene {
                 // GROUP MOVEMENT MODE: All characters jump together
                 if (this.player.body.touching.down) {
                     console.log('[BattleScene] Up key pressed - group jump');
-                    this.player.body.setVelocityY(-450);
+            this.player.body.setVelocityY(-450);
                 }
                 this.partyCharacters.forEach(char => {
                     if (char.body && char.body.touching.down) {
@@ -2597,6 +2597,11 @@ export default class BattleScene extends Phaser.Scene {
         this.time.delayedCall(3000, () => {
             console.log('[BattleScene] Game Over - Returning to StartScene');
             this.cleanup();
+            
+            // Stop WorldScene (it was paused, not stopped)
+            this.scene.stop('WorldScene');
+            
+            // Start fresh StartScene
             this.scene.start('StartScene');
         });
     }
@@ -3670,8 +3675,8 @@ export default class BattleScene extends Phaser.Scene {
         if (this.groupMovementMode) {
             // GROUP MODE: All characters dash together
             console.log('[Dash] Group dash - all characters dashing together');
-            this.player.body.setVelocityX(this.dashSpeed * dashDirection);
-            this.player.setAlpha(0.7);
+        this.player.body.setVelocityX(this.dashSpeed * dashDirection);
+        this.player.setAlpha(0.7);
             
             // Dash all party characters
             this.partyCharacters.forEach(char => {
@@ -3707,8 +3712,8 @@ export default class BattleScene extends Phaser.Scene {
             
             if (this.groupMovementMode) {
                 // Reset all characters in group mode
-                this.player.setAlpha(1);
-                this.player.body.setVelocityX(0);
+            this.player.setAlpha(1);
+            this.player.body.setVelocityX(0);
                 
                 this.partyCharacters.forEach(char => {
                     if (char.body) {
@@ -4554,7 +4559,7 @@ export default class BattleScene extends Phaser.Scene {
         
         return hpStates;
     }
-    
+
     cleanup() {
         console.log('[BattleScene] Cleaning up scene');
         
