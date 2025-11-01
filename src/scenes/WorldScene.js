@@ -274,8 +274,8 @@ export default class WorldScene extends Phaser.Scene {
         this.createSavePoint(300, 300); // Position at (300, 300) - adjust as needed
         this.isOnSavePoint = false;
         
-        // Create flying vehicle (far right of map) - only accessible with full party (4 members)
-        this.createFlyingVehicle(mapWidth - 200, mapHeight / 2);
+        // Create flying vehicle (far right of map + 1500px) - only accessible with full party (4 members)
+        this.createFlyingVehicle(mapWidth + 1300, mapHeight / 2);
         this.isNearVehicle = false;
 
         function adjustCameraForDevice() {
