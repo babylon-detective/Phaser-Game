@@ -1,3 +1,5 @@
+import { partyLeadershipManager } from './PartyLeadershipManager.js';
+
 export default class PartyManager {
     constructor(scene) {
         this.scene = scene;
@@ -5,7 +7,7 @@ export default class PartyManager {
         this.maxPartySize = 4; // Player + 3 recruitable characters
         this.followDistance = 50; // Distance between following characters
         this.recruitableNPCs = new Map(); // Map of recruitable NPCs
-        this.leaderIndex = 0; // 0 = player, 1+ = party member
+        this.leaderIndex = 0; // 0 = player, 1+ = party member (DEPRECATED - use PartyLeadershipManager)
         this.originalPlayer = null; // Store reference to original player sprite
     }
 
@@ -276,95 +278,27 @@ export default class PartyManager {
     }
 
     update() {
+        // ===================================================================
+        // LEGACY FOLLOWING SYSTEM DISABLED
+        // PartyFollowingManager now handles ALL movement and following
+        // This method only ensures visibility of recruited NPCs
+        // ===================================================================
+        
         if (this.partyMembers.length === 0) return;
 
-        const currentLeader = this.scene.playerManager.player;
-        if (!currentLeader) return;
-
-        // If a party member is the leader (leaderIndex > 0), the original player needs to follow too
-        if (this.leaderIndex > 0 && this.originalPlayer && this.originalPlayer.body) {
-            // Original player should follow at position 0 (right behind leader)
-            const targetX = currentLeader.x - this.followDistance;
-            const targetY = currentLeader.y;
-
-            const dx = targetX - this.originalPlayer.x;
-            const dy = targetY - this.originalPlayer.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > 10) {
-                const speed = 0.1;
-                this.originalPlayer.x += dx * speed;
-                this.originalPlayer.y += dy * speed;
-
-                // Update the original player's direction indicator
-                if (this.scene.playerManager.controls && this.scene.playerManager.controls.directionIndicator) {
-                    // Only update if it's not the current leader's indicator
-                    // The leader's indicator is handled by PlayerManager.update()
-                }
-            }
-        }
-
-        // Update party member positions to follow leader
-        this.partyMembers.forEach((member, index) => {
+        // Only manage visibility - DO NOT MOVE ANY SPRITES
+        this.partyMembers.forEach((member) => {
             if (!member.gameObject || !member.gameObject.active) return;
 
-            // IMPORTANT: Skip the current leader - they are being controlled, not following
-            // If leaderIndex > 0, it means a party member is the leader
-            // Party member index 0 corresponds to leaderIndex 1, etc.
-            const memberLeaderIndex = index + 1;
-            if (memberLeaderIndex === this.leaderIndex) {
-                // This party member is currently the leader, skip following logic
-                return;
-            }
-
-            // Make sure recruited members are visible and following
+            // Ensure recruited members are visible
             if (!member.gameObject.visible) {
                 member.gameObject.setVisible(true);
                 member.indicator.setVisible(true);
-            }
-
-            // Calculate follow position
-            // If original player is following (leaderIndex > 0), party members shift back by 1
-            let followIndex;
-            if (this.leaderIndex > 0) {
-                // Leader is a party member, so:
-                // - Position 0: Original player (right behind leader)
-                // - Position 1+: Other party members
-                if (index < this.leaderIndex - 1) {
-                    // Party members before the leader in the array
-                    followIndex = index + 2; // Skip leader (0) and original player (1)
-                } else {
-                    // Party members after the leader in the array
-                    followIndex = index + 2;
-                }
-            } else {
-                // Original player is leader, normal following
-                followIndex = index + 1;
-            }
-
-            const targetX = currentLeader.x - (followIndex * this.followDistance);
-            const targetY = currentLeader.y;
-
-            // Move towards target position
-            const dx = targetX - member.gameObject.x;
-            const dy = targetY - member.gameObject.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            if (distance > 10) {
-                const speed = 0.1;
-                member.gameObject.x += dx * speed;
-                member.gameObject.y += dy * speed;
-
-                // Update indicator position
-                member.indicator.setPosition(
-                    member.gameObject.x,
-                    member.gameObject.y - 40
-                );
-
-                // Keep trigger zone hidden (they don't trigger battles anymore)
-                // Trigger zone stays at original position but disabled
+                console.log(`[PartyManager] Made ${member.name} visible`);
             }
         });
+        
+        // Note: All movement is handled by PartyFollowingManager in WorldScene.update()
     }
 
     getPartyForBattle() {
@@ -460,45 +394,22 @@ export default class PartyManager {
      * @param {string} direction - 'left' or 'right'
      */
     rotateLeader(direction) {
-        // Need at least 2 characters total (player + 1 party member)
-        if (this.partyMembers.length < 1) {
-            console.log('[PartyManager] Not enough party members to rotate leader');
-            return;
-        }
-        
-        const player = this.scene.playerManager?.player;
-        if (!player) return;
-        
-        // Store original player reference on first rotation
-        if (!this.originalPlayer) {
-            this.originalPlayer = player;
-            console.log('[PartyManager] Stored original player reference');
-        }
-        
-        const oldLeaderIndex = this.leaderIndex;
-        const totalCharacters = 1 + this.partyMembers.length; // Player + party members
-        
-        if (direction === 'left') {
-            this.leaderIndex = (this.leaderIndex - 1 + totalCharacters) % totalCharacters;
-        } else {
-            this.leaderIndex = (this.leaderIndex + 1) % totalCharacters;
-        }
-        
-        const leaderName = this.leaderIndex === 0 ? 'Player' : this.partyMembers[this.leaderIndex - 1].name;
-        console.log(`[PartyManager] Leader rotated to: ${leaderName} (index ${this.leaderIndex})`);
-        
-        // Rearrange party formation to put new leader in front
-        this.rearrangePartyFormation();
-        
-        // Update camera to follow new leader
-        this.updateLeaderVisuals();
+        // DEPRECATED: This method is no longer used
+        // Use PartyLeadershipManager.rotateLeft() or rotateRight() instead
+        console.warn('[PartyManager] rotateLeader() is DEPRECATED - use PartyLeadershipManager instead');
     }
     
     /**
-     * Rearrange the party formation based on the current leader
-     * The leader is always in the front (controllable) position, others follow
+     * DEPRECATED: Rearrange the party formation based on the current leader
      */
     rearrangePartyFormation() {
+        // DEPRECATED: This method is no longer used
+        // PartyFollowingManager handles all formation logic now
+        console.warn('[PartyManager] rearrangePartyFormation() is DEPRECATED - use PartyFollowingManager instead');
+        return;
+        
+        // OLD CODE BELOW (kept for reference but never executes)
+        /*
         // Get the current controllable sprite (always the one PlayerManager controls)
         const currentControllableSprite = this.scene.playerManager?.player;
         if (!currentControllableSprite) return;
@@ -563,12 +474,20 @@ export default class PartyManager {
         
         const leaderName = this.leaderIndex === 0 ? 'Player' : this.partyMembers[this.leaderIndex - 1].name;
         console.log(`[PartyManager] Formation rearranged with ${leaderName} in front`);
+        */
     }
     
     /**
-     * Update visual indicators and camera for the current leader
+     * DEPRECATED: Update visual indicators and camera for the current leader
      */
     updateLeaderVisuals() {
+        // DEPRECATED: This method is no longer used
+        // WorldScene.switchControlToLeader() handles all visual updates now
+        console.warn('[PartyManager] updateLeaderVisuals() is DEPRECATED - use WorldScene.switchControlToLeader() instead');
+        return;
+        
+        // OLD CODE BELOW (kept for reference but never executes)
+        /*
         console.log('[PartyManager] ====== UPDATE LEADER VISUALS ======');
         console.log(`[PartyManager] Leader index: ${this.leaderIndex}`);
         
@@ -645,6 +564,7 @@ export default class PartyManager {
             }
         }
         console.log('[PartyManager] =====================================');
+        */
     }
 
     cleanup() {
