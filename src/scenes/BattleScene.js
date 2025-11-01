@@ -2161,6 +2161,44 @@ export default class BattleScene extends Phaser.Scene {
         });
     }
     
+    findClosestPartyMember(npc) {
+        // Create array of all targetable party members (player + active party characters)
+        const allTargets = [this.player];
+        
+        if (this.partyCharacters && this.partyCharacters.length > 0) {
+            this.partyCharacters.forEach(character => {
+                if (character && character.active && !character.memberData?.isDowned) {
+                    allTargets.push(character);
+                }
+            });
+        }
+        
+        // Find closest target
+        let closestTarget = null;
+        let closestDistance = Infinity;
+        
+        allTargets.forEach(target => {
+            if (!target || !target.active) return;
+            
+            // Skip downed player
+            if (target === this.player && this.isPlayerDowned) return;
+            
+            const distance = Phaser.Math.Distance.Between(
+                npc.x,
+                npc.y,
+                target.x,
+                target.y
+            );
+            
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestTarget = target;
+            }
+        });
+        
+        return { target: closestTarget, distance: closestDistance };
+    }
+    
     updateNPCMovement(delta) {
         // Don't move NPCs during dialogue, enemy selection, or victory
         if (this.isDialogueActive || this.isEnemySelectionMode || !this.isPlayerTurn || this.isVictorySequence) {
@@ -2197,13 +2235,19 @@ export default class BattleScene extends Phaser.Scene {
                 return;
             }
             
-            // Calculate distance to player
-            const distanceToPlayer = Phaser.Math.Distance.Between(
-                npc.x,
-                npc.y,
-                this.player.x,
-                this.player.y
-            );
+            // Find closest party member (player or party character) to target
+            const { target: closestTarget, distance: distanceToTarget } = this.findClosestPartyMember(npc);
+            
+            if (!closestTarget) {
+                // No valid targets - stop moving
+                npc.body.setVelocityX(0);
+                movementData.isMoving = false;
+                return;
+            }
+            
+            // Store current target for attack logic
+            movementData.currentTarget = closestTarget;
+            const distanceToPlayer = distanceToTarget; // Use distance to closest target
             
             // Determine AI state based on HP and combat status
             const hpPercent = npc.enemyData.health / npc.enemyData.maxHealth;
@@ -2243,11 +2287,13 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     updateNPCIdleState(npc, movementData, delta, distanceToPlayer, isPlayerCharging) {
-        // Idle state: walk forward toward player slowly (modified by aggressiveness)
+        // Idle state: walk forward toward closest target slowly (modified by aggressiveness)
         movementData.changeTimer += delta;
         
-        // Slowly approach player
-        const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+        const target = movementData.currentTarget || this.player;
+        
+        // Slowly approach target
+        const directionToPlayer = target.x > npc.x ? 1 : -1;
         movementData.direction = directionToPlayer;
         
         // If player is charging AP, move faster and attack if in range
@@ -2277,8 +2323,9 @@ export default class BattleScene extends Phaser.Scene {
     }
     
     updateNPCCombatState(npc, movementData, delta, distanceToPlayer, isPlayerCharging) {
-        // Combat state: actively pursue and attack player
-        const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+        // Combat state: actively pursue and attack closest target
+        const target = movementData.currentTarget || this.player;
+        const directionToPlayer = target.x > npc.x ? 1 : -1;
         
         // Check if in attack range
         if (distanceToPlayer <= this.npcAttackRange) {
@@ -2306,6 +2353,8 @@ export default class BattleScene extends Phaser.Scene {
         // Defensive state: maintain position with slight mobility
         movementData.changeTimer += delta;
         
+        const target = movementData.currentTarget || this.player;
+        
         // Don't rush forward, just slight repositioning
         if (distanceToPlayer <= this.npcAttackRange) {
             // In attack range - stop and attack
@@ -2319,7 +2368,7 @@ export default class BattleScene extends Phaser.Scene {
             }
         } else if (distanceToPlayer < this.npcAttackRange * 1.5) {
             // Close but not in range - slow approach (faster if player charging)
-            const directionToPlayer = this.player.x > npc.x ? 1 : -1;
+            const directionToPlayer = target.x > npc.x ? 1 : -1;
             const chargingMultiplier = isPlayerCharging ? 0.6 : 0.4;
             const velocity = (this.npcMovementSpeed * movementData.aggressiveness * chargingMultiplier) * directionToPlayer;
             npc.body.setVelocityX(velocity);
@@ -2347,10 +2396,14 @@ export default class BattleScene extends Phaser.Scene {
         const damage = baseDamage + (npcStrength * 2);
         const knockbackForce = 200 + (npcStrength * 30); // Base knockback + strength modifier
         
-        // Determine attack direction
-        const isNPCRightOfPlayer = npc.x > this.player.x;
-        const attackOffset = isNPCRightOfPlayer ? -this.attackOffset : this.attackOffset;
-        const directionToPlayer = isNPCRightOfPlayer ? -1 : 1;
+        // Get the NPC's movement data to find the current target
+        const movementData = this.npcMovementData.get(npc);
+        const target = movementData?.currentTarget || this.player;
+        
+        // Determine attack direction based on target
+        const isNPCRightOfTarget = npc.x > target.x;
+        const attackOffset = isNPCRightOfTarget ? -this.attackOffset : this.attackOffset;
+        const directionToTarget = isNPCRightOfTarget ? -1 : 1;
         
         // Create attack hitbox
         const attackX = npc.x + attackOffset;
@@ -2367,79 +2420,107 @@ export default class BattleScene extends Phaser.Scene {
         this.physics.add.existing(npcAttack);
         npcAttack.body.setAllowGravity(false);
         
-        // Check for collision with player
-        this.physics.add.overlap(npcAttack, this.player, () => {
-            console.log(`[NPC AI] ${npc.enemyData.type} hit player for ${damage} damage!`);
+        // Create array of all targetable characters
+        const allTargets = [this.player];
+        if (this.partyCharacters && this.partyCharacters.length > 0) {
+            this.partyCharacters.forEach(character => {
+                if (character && character.active && !character.memberData?.isDowned) {
+                    allTargets.push(character);
+                }
+            });
+        }
+        
+        // Check for collision with ANY party member
+        allTargets.forEach(targetChar => {
+            if (!targetChar || !targetChar.active) return;
             
-            // Apply HP damage to player
-            this.currentHP = Math.max(0, this.currentHP - damage);
-            console.log(`[NPC AI] Player HP: ${this.currentHP}/${this.maxHP}`);
-            
-            // Save health to gameStateManager immediately
-            gameStateManager.updatePlayerHealth(this.currentHP);
-            
-            // Update HUD to reflect HP change
-            if (this.hudManager) {
-                this.hudManager.updateBattlePartyStats();
-            }
-            
-            // Apply knockback to player
-            const knockbackX = directionToPlayer * knockbackForce;
-            const knockbackY = -80; // Upward knockback
-            
-            if (this.player.body) {
-                this.player.body.setVelocity(knockbackX, knockbackY);
+            this.physics.add.overlap(npcAttack, targetChar, () => {
+                const isPlayer = targetChar === this.player;
+                const characterName = isPlayer ? 'Player' : (targetChar.memberData?.name || 'Character');
                 
-                // Reset player velocity after knockback duration
-                this.time.delayedCall(200, () => {
-                    if (this.player && this.player.body) {
-                        this.player.body.setVelocityX(0);
+                console.log(`[NPC AI] ${npc.enemyData.type} hit ${characterName} for ${damage} damage!`);
+                
+                // Apply HP damage to the target
+                if (isPlayer) {
+                    // Damage player
+                    this.currentHP = Math.max(0, this.currentHP - damage);
+                    console.log(`[NPC AI] Player HP: ${this.currentHP}/${this.maxHP}`);
+                    
+                    // Save health to gameStateManager immediately
+                    gameStateManager.updatePlayerHealth(this.currentHP);
+                } else {
+                    // Damage party member
+                    if (targetChar.memberData) {
+                        targetChar.memberData.currentHP = Math.max(0, targetChar.memberData.currentHP - damage);
+                        console.log(`[NPC AI] ${characterName} HP: ${targetChar.memberData.currentHP}/${targetChar.memberData.maxHP}`);
+                    }
+                }
+                
+                // Update HUD to reflect HP change
+                if (this.hudManager) {
+                    this.hudManager.updateBattlePartyStats();
+                }
+                
+                // Apply knockback to target
+                const knockbackX = directionToTarget * knockbackForce;
+                const knockbackY = -80; // Upward knockback
+                
+                if (targetChar.body) {
+                    targetChar.body.setVelocity(knockbackX, knockbackY);
+                    
+                    // Reset target velocity after knockback duration
+                    this.time.delayedCall(200, () => {
+                        if (targetChar && targetChar.body) {
+                            targetChar.body.setVelocityX(0);
+                        }
+                    });
+                }
+                
+                // Show damage text on target
+                const damageText = this.add.text(targetChar.x, targetChar.y - 50, `-${damage} HP`, {
+                    fontSize: '28px',
+                    fontFamily: 'Arial',
+                    color: '#ff0000',
+                    stroke: '#000000',
+                    strokeThickness: 4,
+                    fontStyle: 'bold'
+                }).setOrigin(0.5);
+                
+                this.tweens.add({
+                    targets: damageText,
+                    y: targetChar.y - 100,
+                    alpha: 0,
+                    duration: 800,
+                    ease: 'Power2',
+                    onComplete: () => {
+                        damageText.destroy();
                     }
                 });
-            }
-            
-            // Show damage text on player
-            const damageText = this.add.text(this.player.x, this.player.y - 50, `-${damage} HP`, {
-                fontSize: '28px',
-                fontFamily: 'Arial',
-                color: '#ff0000',
-                stroke: '#000000',
-                strokeThickness: 4,
-                fontStyle: 'bold'
-            }).setOrigin(0.5);
-            
-            this.tweens.add({
-                targets: damageText,
-                y: this.player.y - 100,
-                alpha: 0,
-                duration: 800,
-                ease: 'Power2',
-                onComplete: () => {
-                    damageText.destroy();
+                
+                // Visual feedback on target (flash red with alpha)
+                this.tweens.add({
+                    targets: targetChar,
+                    alpha: 0.3,
+                    fillColor: 0xff0000,
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2,
+                    onComplete: () => {
+                        targetChar.setAlpha(1);
+                    }
+                });
+                
+                // Check if target is defeated
+                if (isPlayer && this.currentHP <= 0) {
+                    console.log('[NPC AI] Player defeated!');
+                    this.handleCharacterDowned(this.player, true);
+                } else if (!isPlayer && targetChar.memberData && targetChar.memberData.currentHP <= 0) {
+                    console.log(`[NPC AI] ${characterName} defeated!`);
+                    this.handleCharacterDowned(targetChar, false);
                 }
+                
+                npcAttack.destroy();
             });
-            
-            // Visual feedback on player (flash red with alpha)
-            this.tweens.add({
-                targets: this.player,
-                alpha: 0.3,
-                fillColor: 0xff0000,
-                duration: 100,
-                yoyo: true,
-                repeat: 2,
-                onComplete: () => {
-                    this.player.setAlpha(1);
-                    // Rectangle uses fillColor, not tint (which is for sprites)
-                }
-            });
-            
-            // Check if player is defeated
-            if (this.currentHP <= 0) {
-                console.log('[NPC AI] Player defeated!');
-                this.handlePlayerDefeat();
-            }
-            
-            npcAttack.destroy();
         });
         
         // Remove attack after duration
